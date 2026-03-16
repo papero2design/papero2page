@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+/* 폰트 임포트 */
+@font-face {
+    font-family: "HealthsetGothic";
+    src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_four@1.0/HealthsetGothicLight.woff")
+        format("woff");
+    font-weight: normal;
+    font-display: swap;
+}
+
+/* 1. 웹사이트 기본 폰트로 지정 */
+body {
+    font-family: "HealthsetGothic", sans-serif;
+}
+
+/* 2. input, button 등은 브라우저 기본 폰트를 고집하는 성질이 있어서 강제로 상속 */
+input,
+button,
+textarea,
+select {
+    font-family: inherit;
+}
+
+/* ── 리셋 & 기본 ─────────────────────────────────────── */
+
+#wrap {
+    font-size: 13pt;
+    color: #333;
+    min-height: 100vh;
+    line-height: 2;
+}

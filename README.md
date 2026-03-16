@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
-
-## Getting Started
-
-First, run the development server:
+1. local 실행
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`http://localhost:3000`에서 실행
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+2. 폴더 구조
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+src/
+├── app/                  # 화면(페이지)과 라우팅을 담당하는 곳
+│   ├── (auth)/           # 괄호()는 URL 주소에는 안 나오지만 폴더만 묶어주는 기능!
+│   │   └── login/        # 로그인 페이지 (localhost:3000/login)
+│   ├── (dashboard)/      # 대시보드 공통 레이아웃(사이드바 등)이 적용될 페이지들
+│   │   ├── tasks/        # 메인 작업 리스트 페이지
+│   │   ├── statistics/   # 통계 및 캘린더 페이지 (관리자용)
+│   │   └── designers/    # 디자이너 관리 페이지 (관리자용)
+│   ├── layout.tsx        # 앱 전체의 최상위 뼈대 (여기에 테마를 씌울 거야)
+│   ├── page.tsx          # 첫 접속 페이지 (로그인 여부에 따라 리다이렉트 처리)
+│   └── globals.css       # 전역 CSS (폰트 포함)
+│
+├── components/           # 재사용 가능한 UI 블록들
+│   ├── layout/           # Header.tsx, Sidebar.tsx 등
+│   ├── tasks/            # TaskCard.tsx, TaskForm.tsx (작업 관련 컴포넌트)
+│   └── common/           # 공통으로 쓰는 모달, 뱃지 등
+│
+├── lib/                  # 설정 파일이나 유틸리티 함수들
+│   ├── supabase/         # supabaseClient.ts (DB 연결 세팅)
+│   ├── theme/            # theme.ts (MUI 테마 세팅)
+│   └── utils/            # formatDate.ts 같은 공통 함수들
+│
+└── types/                # 타입스크립트 타입 정의 모음
+    └── database.ts       # Task, Designer 등의 타입
+```

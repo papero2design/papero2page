@@ -151,8 +151,7 @@ const theme = createTheme({
             light: "#EFF6FF",
         },
         background: {
-            default: "#FAFAF9",
-            paper: "#FFFFFF",
+            default: "#FFFFFF",
         },
         text: {
             primary: "#18181B",

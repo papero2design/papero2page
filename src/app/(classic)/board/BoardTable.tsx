@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition, useEffect, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { TaskWithDesigner } from "@/types/database";
 import {
     updateTask,
@@ -10,9 +9,12 @@ import {
     deleteTask,
     deleteTasks,
     togglePriority,
+    deleteTaskFile,
     type LogEntry,
 } from "./actions";
 import { createClient } from "@/lib/supabase/client";
+import { uploadToR2, deleteFromR2 } from "@/lib/r2/upload";
+import FileUploadField, { type ExistingFile } from "./FileUploadField";
 
 // ─────────────────────────────────────────────────────────────
 // 상수 & 타입
@@ -70,6 +72,7 @@ const FIELD_LABELS: Record<string, string> = {
     order_method_note: "주문방법 메모",
     print_items: "인쇄항목",
     post_processing: "후가공",
+    file_path: "파일전달경로",
     consult_path: "상담경로",
     consult_link: "상담링크",
     special_details: "처리특이사항",
@@ -207,7 +210,7 @@ function ReasonModal({
                     autoFocus
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
-                    placeholder="사유 입력 (선택 — 비워도 됩니다)"
+                    placeholder="사유 입력 (선택사항)"
                     rows={3}
                     style={{
                         ...inp(false),
@@ -511,8 +514,9 @@ function LogTimeline({ taskId }: { taskId: string }) {
         </div>
     );
 }
+
 // ─────────────────────────────────────────────────────────────
-// 상세 모달 (보기 탭 생존 + 수정 탭 개선 완벽 퓨전 버전)
+// 상세 모달
 // ─────────────────────────────────────────────────────────────
 
 function TaskDetailModal({
@@ -528,7 +532,6 @@ function TaskDetailModal({
     designers?: { id: string; name: string }[];
     isAdmin?: boolean;
 }) {
-    const router = useRouter(); // 라우터 불러오기
     const isQuick = QUICK_METHODS.includes(task.order_method ?? "");
     const [currentStatus, setCurrentStatus] = useState<Status>(
         task.status as Status,
@@ -536,26 +539,31 @@ function TaskDetailModal({
     const [currentPriority, setCurrentPriority] = useState(
         task.is_priority ?? false,
     );
-
     const [tab, setTab] = useState<"view" | "edit" | "log">("view");
-
     const [errors, setErrors] = useState<Record<string, string>>({});
-
     const [copiedKey, setCopiedKey] = useState<string | null>(null);
-
     const [isPending, startTransition] = useTransition();
     const blockCloseRef = useRef(false);
+    const [newFiles, setNewFiles] = useState<File[]>([]); // 수정탭 첨부 파일
+    // 첨부파일 — VIEW/EDIT 공유 (한 번만 조회, 삭제 시 즉각 반영)
+    const {
+        files: taskFiles,
+        loading: filesLoading,
+        reload: reloadFiles,
+        removeById: removeFileById,
+        addFile: addTaskFile,
+    } = useTaskFiles(task.id);
 
-    const [newFiles, setNewFiles] = useState<File[]>([]);
-
+    // 상태변경 사유 모달
     const [statusModal, setStatusModal] = useState<{
         show: boolean;
         target: Status | null;
     }>({ show: false, target: null });
+    // 우선작업 사유 모달
     const [priorityModal, setPriorityModal] = useState(false);
+    // 삭제 확인
     const [deleteConfirm, setDeleteConfirm] = useState(false);
 
-    // 복사 함수
     const copyToClipboard = (label: string, value: string) => {
         if (!value || value === "없음" || value === "미배정") return;
         navigator.clipboard.writeText(value).then(() => {
@@ -614,7 +622,6 @@ function TaskDetailModal({
                     reason,
                 );
                 setCurrentStatus(newStatus);
-                router.refresh(); // 👈 3. 완료 후 부모 리스트 새로고침!
             } catch (err) {
                 alert("상태 변경 실패: " + (err as Error).message);
             }
@@ -630,14 +637,30 @@ function TaskDetailModal({
                 await togglePriority(task.id, newVal, reason);
                 setCurrentPriority(newVal);
                 set("is_priority", newVal);
-                router.refresh(); // 👈 4. 완료 후 부모 리스트 새로고침!
             } catch (err) {
                 alert("우선작업 변경 실패: " + (err as Error).message);
             }
         });
     };
 
-    // ── 내용 수정 & 새 첨부파일 저장 (한 번에 묶어서 처리) ──
+    // ── 첨부파일 삭제 ──
+    const handleDeleteExisting = async (id: string) => {
+        // 즉시 UI 반영 (낙관적)
+        removeFileById(id);
+        const target = (taskFiles ?? []).find((f) => f.id === id);
+        try {
+            // R2 삭제
+            if (target?.file_url)
+                await deleteFromR2("task-files", target.file_url);
+            // DB 삭제 — server action 사용 (RLS 우회)
+            await deleteTaskFile(id);
+        } catch (err) {
+            alert("파일 삭제 실패: " + (err as Error).message);
+            reloadFiles(); // 실패 시 원복
+        }
+    };
+
+    // ── 내용 수정 ──
     const handleSave = () => {
         const e: Record<string, string> = {};
         if (!form.order_source) e.order_source = "주문경로를 선택해주세요";
@@ -656,37 +679,40 @@ function TaskDetailModal({
             try {
                 const supabase = createClient();
 
-                // 1. 파일이 있으면 먼저 스토리지에 업로드
+                // 새 파일 먼저 업로드 (저장하기 클릭 시)
+                console.log(
+                    "[handleSave] newFiles:",
+                    newFiles.length,
+                    newFiles.map((f) => f.name),
+                );
                 if (newFiles.length > 0) {
                     for (const file of newFiles) {
-                        const ext = file.name.split(".").pop();
-                        const randomName = Math.random()
-                            .toString(36)
-                            .substring(2, 10);
-                        const safePath = `tasks/${Date.now()}_${randomName}.${ext}`;
-
-                        const { data: upData, error: uploadErr } =
-                            await supabase.storage
-                                .from("task-files")
-                                .upload(safePath, file);
-
-                        if (!uploadErr && upData) {
-                            const { data: urlData } = supabase.storage
-                                .from("task-files")
-                                .getPublicUrl(safePath);
-                            await supabase.from("task_files").insert({
+                        console.log("[handleSave] 업로드 시작:", file.name);
+                        const { publicUrl } = await uploadToR2(
+                            "task-files",
+                            file,
+                        );
+                        console.log("[handleSave] R2 업로드 완료:", publicUrl);
+                        const { error: insertErr } = await supabase
+                            .from("task_files")
+                            .insert({
                                 task_id: task.id,
-                                file_url: urlData.publicUrl,
+                                file_url: publicUrl,
                                 file_name: file.name,
                                 file_size: file.size,
                             });
-                        } else {
-                            throw new Error(`파일 업로드 실패: ${file.name}`);
-                        }
+                        console.log(
+                            "[handleSave] task_files insert 결과:",
+                            insertErr?.message ?? "성공",
+                        );
+                        if (insertErr)
+                            throw new Error(
+                                `첨부파일 저장 실패: ${insertErr.message}`,
+                            );
                     }
+                    setNewFiles([]);
                 }
 
-                // 2. 텍스트 내용 업데이트
                 const postProc =
                     form.post_processing === "기타"
                         ? `기타: ${form.post_processing_note}`
@@ -750,7 +776,6 @@ function TaskDetailModal({
                         newValue: newDesignerName,
                     },
                 ];
-
                 await updateTask(
                     task.id,
                     {
@@ -774,9 +799,6 @@ function TaskDetailModal({
                     logEntries,
                     form.edit_reason.trim() || null,
                 );
-
-                setNewFiles([]);
-                router.refresh(); // 부모 리스트 새로고침
                 onClose();
             } catch (err) {
                 alert("수정 실패: " + (err as Error).message);
@@ -788,8 +810,7 @@ function TaskDetailModal({
         setDeleteConfirm(false);
         startTransition(async () => {
             try {
-                await deleteTask(task.id, "모달에서 삭제");
-                router.refresh(); // 부모 리스트 새로고침
+                await deleteTask(task.id, "목록에서 삭제");
                 onDeleted();
             } catch (err) {
                 alert("삭제 실패: " + (err as Error).message);
@@ -799,21 +820,15 @@ function TaskDetailModal({
 
     const st = STATUS_STYLE[currentStatus] ?? STATUS_STYLE["대기중"];
 
-    // ✅ 보기 탭에서 보여줄 필드 정리
     const viewFields = [
         { label: "주문경로", value: task.order_source },
         { label: "고객이름", value: task.customer_name },
         { label: "주문방법", value: task.order_method, method: true },
-        ...(task.order_method_note
-            ? [{ label: "주문방법 메모", value: task.order_method_note }]
-            : []),
         { label: "인쇄항목", value: task.print_items },
         { label: "후가공", value: task.post_processing ?? "없음" },
-        { label: "파일전달경로", value: task.file_paths?.[0] ?? "없음" },
+        { label: "파일전달경로", value: task.file_paths ?? "없음" },
+        // 파일전달경로는 TaskFiles 컴포넌트로 대체됨
         { label: "상담경로", value: task.consult_path ?? "없음" },
-        ...(task.consult_link
-            ? [{ label: "상담링크", value: task.consult_link }]
-            : []),
         {
             label: "처리특이사항",
             value: task.special_details ?? "없음",
@@ -968,7 +983,7 @@ function TaskDetailModal({
                         </button>
                     </div>
 
-                    {/* 탭 네비게이션 */}
+                    {/* 탭 */}
                     <div
                         style={{
                             display: "flex",
@@ -1066,6 +1081,8 @@ function TaskDetailModal({
                                     </button>
                                 );
                             })}
+
+                            {/* 우선작업 토글 버튼 — 관리자만 */}
                             {isAdmin && (
                                 <button
                                     type="button"
@@ -1099,7 +1116,7 @@ function TaskDetailModal({
                         </div>
                     )}
 
-                    {/* ✅ 부활한 VIEW 탭 (읽기 & 복사 모드) */}
+                    {/* VIEW 테이블 */}
                     {tab === "view" && (
                         <div style={{ padding: "4px 0 8px" }}>
                             <table
@@ -1224,15 +1241,49 @@ function TaskDetailModal({
                                     )}
                                 </tbody>
                             </table>
-                            {/* 첨부파일 읽기 모드 컴포넌트 */}
-                            <TaskFiles taskId={task.id} />
+                            {/* 첨부파일 목록 */}
+                            <div
+                                style={{
+                                    padding: "8px 16px 12px",
+                                    borderTop: "1px solid #f3f4f6",
+                                }}
+                            >
+                                <p
+                                    style={{
+                                        margin: "0 0 8px",
+                                        fontWeight: 600,
+                                        color: "#6b7280",
+                                        fontSize: 13,
+                                    }}
+                                >
+                                    📎 첨부파일{" "}
+                                    {filesLoading
+                                        ? "..."
+                                        : taskFiles && taskFiles.length > 0
+                                          ? `${taskFiles.length}개`
+                                          : "없음"}
+                                </p>
+                                {taskFiles && taskFiles.length > 0 && (
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            gap: 4,
+                                        }}
+                                    >
+                                        {taskFiles.map((f) => (
+                                            <FileItem key={f.id} f={f} />
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
 
-                    {/* LOG 탭 */}
+                    {/* LOG */}
                     {tab === "log" && <LogTimeline taskId={task.id} />}
 
-                    {/* EDIT 탭 (텍스트 수정 및 파일 추가 묶음 처리) */}
+                    {/* EDIT */}
                     {tab === "edit" && (
                         <div
                             style={{ padding: "4px 0 8px" }}
@@ -1290,13 +1341,44 @@ function TaskDetailModal({
                                         required
                                         error={errors.order_method}
                                     >
-                                        <BtnGroup
-                                            options={ORDER_METHODS}
-                                            value={form.order_method}
-                                            onChange={(v) =>
-                                                set("order_method", v)
-                                            }
-                                        />
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                flexWrap: "wrap",
+                                                gap: 5,
+                                                marginBottom: 6,
+                                            }}
+                                        >
+                                            {ORDER_METHODS.map((m) => (
+                                                <button
+                                                    key={m}
+                                                    type="button"
+                                                    onClick={() =>
+                                                        set("order_method", m)
+                                                    }
+                                                    style={{
+                                                        ...toggleBtn(
+                                                            form.order_method ===
+                                                                m,
+                                                        ),
+                                                        ...(QUICK_METHODS.includes(
+                                                            m,
+                                                        ) &&
+                                                        form.order_method === m
+                                                            ? {
+                                                                  background:
+                                                                      "#15803d",
+                                                                  borderColor:
+                                                                      "#15803d",
+                                                                  color: "#fff",
+                                                              }
+                                                            : {}),
+                                                    }}
+                                                >
+                                                    {m}
+                                                </button>
+                                            ))}
+                                        </div>
                                         <input
                                             value={form.order_method_note}
                                             onChange={(e) =>
@@ -1306,10 +1388,7 @@ function TaskDetailModal({
                                                 )
                                             }
                                             placeholder="주문방법 메모 (선택)"
-                                            style={{
-                                                ...inp(false),
-                                                marginTop: 6,
-                                            }}
+                                            style={inp(false)}
                                         />
                                     </ERow>
                                     <ERow
@@ -1364,6 +1443,16 @@ function TaskDetailModal({
                                             }
                                         />
                                     </ERow>
+                                    <ERow label="첨부파일">
+                                        <TaskFilesEdit
+                                            dbFiles={taskFiles ?? []}
+                                            newFiles={newFiles}
+                                            setNewFiles={setNewFiles}
+                                            onDeleteExisting={
+                                                handleDeleteExisting
+                                            }
+                                        />
+                                    </ERow>
                                     <ERow label="상담경로">
                                         <BtnGroup
                                             options={CONSULT_PATHS}
@@ -1391,13 +1480,51 @@ function TaskDetailModal({
                                         label="처리특이사항"
                                         error={errors.special_details}
                                     >
-                                        <BtnGroup
-                                            options={["없음", "있음"]}
-                                            value={form.special_details_yn}
-                                            onChange={(v) =>
-                                                set("special_details_yn", v)
-                                            }
-                                        />
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                gap: 5,
+                                                marginBottom:
+                                                    form.special_details_yn ===
+                                                    "있음"
+                                                        ? 6
+                                                        : 0,
+                                            }}
+                                        >
+                                            {(["없음", "있음"] as const).map(
+                                                (v) => (
+                                                    <button
+                                                        key={v}
+                                                        type="button"
+                                                        onClick={() =>
+                                                            set(
+                                                                "special_details_yn",
+                                                                v,
+                                                            )
+                                                        }
+                                                        style={{
+                                                            ...toggleBtn(
+                                                                form.special_details_yn ===
+                                                                    v,
+                                                            ),
+                                                            ...(v === "있음" &&
+                                                            form.special_details_yn ===
+                                                                "있음"
+                                                                ? {
+                                                                      background:
+                                                                          "#ef4444",
+                                                                      borderColor:
+                                                                          "#ef4444",
+                                                                      color: "#fff",
+                                                                  }
+                                                                : {}),
+                                                        }}
+                                                    >
+                                                        {v}
+                                                    </button>
+                                                ),
+                                            )}
+                                        </div>
                                         {form.special_details_yn === "있음" && (
                                             <textarea
                                                 value={form.special_details}
@@ -1407,7 +1534,6 @@ function TaskDetailModal({
                                                         e.target.value,
                                                     )
                                                 }
-                                                placeholder="특이사항 내용을 입력하세요"
                                                 rows={3}
                                                 style={{
                                                     ...inp(
@@ -1415,49 +1541,55 @@ function TaskDetailModal({
                                                     ),
                                                     resize: "vertical",
                                                     display: "block",
-                                                    marginTop: 6,
                                                 }}
                                             />
                                         )}
                                     </ERow>
-                                    <ERow label="첨부파일">
-                                        <TaskFilesEdit
-                                            taskId={task.id}
-                                            newFiles={newFiles}
-                                            setNewFiles={setNewFiles}
-                                            blockCloseRef={blockCloseRef}
-                                        />
-                                    </ERow>
+                                    {/* 담당 디자이너 — 관리자만 수정 가능 */}
                                     <ERow label="담당 디자이너">
                                         {isAdmin ? (
                                             designers.length > 0 ? (
-                                                <BtnGroup
-                                                    options={designers.map(
-                                                        (d) => d.name,
-                                                    )}
-                                                    value={
-                                                        designers.find(
-                                                            (d) =>
-                                                                d.id ===
-                                                                form.assigned_designer_id,
-                                                        )?.name ?? ""
-                                                    }
-                                                    onChange={(name) => {
-                                                        const id =
-                                                            designers.find(
-                                                                (d) =>
-                                                                    d.name ===
-                                                                    name,
-                                                            )?.id;
-                                                        set(
-                                                            "assigned_designer_id",
-                                                            form.assigned_designer_id ===
-                                                                id
-                                                                ? ""
-                                                                : id,
-                                                        );
+                                                <div
+                                                    style={{
+                                                        display: "flex",
+                                                        flexWrap: "wrap",
+                                                        gap: 5,
                                                     }}
-                                                />
+                                                >
+                                                    {designers.map((d) => (
+                                                        <button
+                                                            key={d.id}
+                                                            type="button"
+                                                            onClick={() =>
+                                                                set(
+                                                                    "assigned_designer_id",
+                                                                    form.assigned_designer_id ===
+                                                                        d.id
+                                                                        ? ""
+                                                                        : d.id,
+                                                                )
+                                                            }
+                                                            style={{
+                                                                ...toggleBtn(
+                                                                    form.assigned_designer_id ===
+                                                                        d.id,
+                                                                ),
+                                                                ...(form.assigned_designer_id ===
+                                                                d.id
+                                                                    ? {
+                                                                          background:
+                                                                              "#1ED67D",
+                                                                          borderColor:
+                                                                              "#1ED67D",
+                                                                          color: "#fff",
+                                                                      }
+                                                                    : {}),
+                                                            }}
+                                                        >
+                                                            {d.name}
+                                                        </button>
+                                                    ))}
+                                                </div>
                                             ) : (
                                                 <span
                                                     style={{ color: "#9ca3af" }}
@@ -1466,6 +1598,7 @@ function TaskDetailModal({
                                                 </span>
                                             )
                                         ) : (
+                                            // 비관리자: 읽기 전용
                                             <span
                                                 style={{
                                                     color: task.designer?.name
@@ -1755,6 +1888,7 @@ export default function BoardTable({
                         </th>
                     </tr>
                 </thead>
+                {/* 전체 목록 테이블 */}
                 <tbody>
                     {tasks.length === 0 && (
                         <tr>
@@ -1903,6 +2037,7 @@ export default function BoardTable({
                                         <dd style={styles.dd}>
                                             {task.print_items}
                                         </dd>
+
                                         <dt style={styles.dt}>후가공 :</dt>
                                         <dd
                                             style={{
@@ -2071,7 +2206,7 @@ function inp(hasError: boolean): React.CSSProperties {
 }
 function toggleBtn(active: boolean): React.CSSProperties {
     return {
-        padding: "3px 10px",
+        padding: "4px 12px",
         border: `1px solid ${active ? "#111827" : "#d1d5db"}`,
         borderRadius: 4,
         background: active ? "#111827" : "#fff",
@@ -2166,11 +2301,21 @@ type TaskFile = {
 };
 
 function useTaskFiles(taskId: string) {
-    // null = 로딩 중, [] = 로드 완료(파일 없음)
     const [files, setFiles] = useState<TaskFile[] | null>(null);
     const [tick, setTick] = useState(0);
 
     const reload = useCallback(() => setTick((t) => t + 1), []);
+    // 낙관적 삭제 — DB 응답 없이 즉시 UI 반영
+    const removeById = useCallback(
+        (id: string) =>
+            setFiles((prev) => (prev ? prev.filter((f) => f.id !== id) : prev)),
+        [],
+    );
+    // 낙관적 추가 — 업로드 완료 후 즉시 UI 반영
+    const addFile = useCallback(
+        (f: TaskFile) => setFiles((prev) => (prev ? [...prev, f] : [f])),
+        [],
+    );
 
     useEffect(() => {
         let cancelled = false;
@@ -2187,7 +2332,7 @@ function useTaskFiles(taskId: string) {
         };
     }, [taskId, tick]);
 
-    return { files, loading: files === null, reload };
+    return { files, loading: files === null, reload, removeById, addFile };
 }
 
 function FileItem({ f, onDelete }: { f: TaskFile; onDelete?: () => void }) {
@@ -2217,8 +2362,7 @@ function FileItem({ f, onDelete }: { f: TaskFile; onDelete?: () => void }) {
                 style={{
                     flex: 1,
                     overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
+                    wordBreak: "break-all",
                     fontWeight: 500,
                     color: "#374151",
                     textDecoration: "none",
@@ -2248,7 +2392,11 @@ function FileItem({ f, onDelete }: { f: TaskFile; onDelete?: () => void }) {
             </a>
             {onDelete && (
                 <button
-                    onClick={onDelete}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        onDelete();
+                    }}
                     style={{
                         background: "none",
                         border: "none",
@@ -2267,171 +2415,32 @@ function FileItem({ f, onDelete }: { f: TaskFile; onDelete?: () => void }) {
     );
 }
 
-// VIEW 탭 — 읽기 전용
-function TaskFiles({ taskId }: { taskId: string }) {
-    const { files, loading } = useTaskFiles(taskId);
-
-    if (loading)
-        return (
-            <div
-                style={{
-                    padding: "8px 16px",
-                    borderTop: "1px solid #f3f4f6",
-                    color: "#d1d5db",
-                    fontSize: 13,
-                }}
-            >
-                파일 불러오는 중...
-            </div>
-        );
-
-    const fileList = files ?? [];
-    return (
-        <div
-            style={{ padding: "8px 16px 12px", borderTop: "1px solid #f3f4f6" }}
-        >
-            <p
-                style={{
-                    margin: "0 0 8px",
-                    fontWeight: 600,
-                    color: "#6b7280",
-                    fontSize: 13,
-                }}
-            >
-                📎 첨부파일{" "}
-                {fileList.length > 0 ? `${fileList.length}개` : "없음"}
-            </p>
-            {fileList.length > 0 && (
-                <div
-                    style={{ display: "flex", flexDirection: "column", gap: 4 }}
-                >
-                    {fileList.map((f) => (
-                        <FileItem key={f.id} f={f} />
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-}
-// EDIT 탭 — 기존 파일 삭제 + 새 파일 추가
+// EDIT 탭 — dbFiles/삭제 콜백은 TaskDetailModal에서 관리
 function TaskFilesEdit({
-    taskId,
+    dbFiles,
     newFiles,
     setNewFiles,
-    blockCloseRef,
+    onDeleteExisting,
 }: {
-    taskId: string;
+    dbFiles: TaskFile[];
     newFiles: File[];
     setNewFiles: React.Dispatch<React.SetStateAction<File[]>>;
-    blockCloseRef: React.MutableRefObject<boolean>;
+    onDeleteExisting: (id: string) => Promise<void>;
 }) {
-    const { files, reload } = useTaskFiles(taskId);
-    const fileRef = useRef<HTMLInputElement>(null);
-
-    const handleDelete = async (fileId: string, fileUrl: string) => {
-        const supabase = createClient();
-        const path = fileUrl.split("/task-files/")[1]?.split("?")[0];
-        if (path) await supabase.storage.from("task-files").remove([path]);
-        await supabase.from("task_files").delete().eq("id", fileId);
-        reload();
-    };
+    const existingFiles: ExistingFile[] = dbFiles.map((f) => ({
+        id: f.id,
+        name: f.file_name,
+        url: f.file_url,
+        size: f.file_size,
+    }));
 
     return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {/* 기존 파일 */}
-            {(files ?? []).map((f) => (
-                <FileItem
-                    key={f.id}
-                    f={f}
-                    onDelete={() => handleDelete(f.id, f.file_url)}
-                />
-            ))}
-
-            {/* 새 파일 추가 버튼 */}
-            <div>
-                <button
-                    type="button"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        fileRef.current?.click();
-                    }}
-                    style={{
-                        padding: "4px 12px",
-                        border: "1px dashed #d1d5db",
-                        borderRadius: 4,
-                        background: "#f9fafb",
-                        cursor: "pointer",
-                        color: "#6b7280",
-                        fontFamily: "inherit",
-                    }}
-                >
-                    + 파일 추가
-                </button>
-                <input
-                    ref={fileRef}
-                    type="file"
-                    multiple
-                    style={{ display: "none" }}
-                    onChange={(e) => {
-                        const picked = Array.from(e.target.files ?? []);
-                        if (picked.length > 0) {
-                            setNewFiles((prev) => [...prev, ...picked]);
-                        }
-                        e.target.value = "";
-                    }}
-                />
-            </div>
-
-            {/* 추가할 파일 목록 (미리보기) */}
-            {newFiles.map((f, i) => (
-                <div
-                    key={i}
-                    style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "5px 10px",
-                        borderRadius: 6,
-                        background: "#f0fdf4",
-                        border: "1px solid #86efac",
-                    }}
-                >
-                    <span style={{ fontSize: 14 }}>📎</span>
-                    <span
-                        style={{
-                            flex: 1,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            fontSize: 13,
-                            color: "#15803d",
-                        }}
-                    >
-                        {f.name}
-                    </span>
-                    <span style={{ color: "#9ca3af", fontSize: 12 }}>
-                        {Math.round(f.size / 1024)}KB
-                    </span>
-                    <button
-                        type="button"
-                        onClick={() =>
-                            setNewFiles((prev) =>
-                                prev.filter((_, j) => j !== i),
-                            )
-                        }
-                        style={{
-                            background: "none",
-                            border: "none",
-                            cursor: "pointer",
-                            color: "#9ca3af",
-                            padding: "0 2px",
-                        }}
-                    >
-                        ✕
-                    </button>
-                </div>
-            ))}
-        </div>
+        <FileUploadField
+            files={newFiles}
+            onChange={setNewFiles}
+            existingFiles={existingFiles}
+            onDeleteExisting={onDeleteExisting}
+        />
     );
 }
 
@@ -2442,9 +2451,10 @@ function TaskFilesEdit({
 
 function fmtDate(iso: string) {
     const d = new Date(iso);
+    const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, "0");
     const dd = String(d.getDate()).padStart(2, "0");
-    return `${mm}/${dd}`;
+    return `${yyyy}/${mm}/${dd}`;
 }
 function fmtTime(iso: string) {
     const d = new Date(iso);

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 // ─────────────────────────────────────────────────────────────
 // 내부 헬퍼
@@ -432,4 +433,13 @@ export async function hardDeleteTask(id: string) {
     const { error } = await supabase.from("tasks").delete().eq("id", id);
     if (error) throw new Error(`영구삭제 실패: ${error.message}`);
     revalidatePath("/board/trash");
+}
+
+export async function deleteTaskFile(fileId: string) {
+    const supabase = createAdminClient();
+    const { error } = await supabase
+        .from("task_files")
+        .delete()
+        .eq("id", fileId);
+    if (error) throw new Error(error.message);
 }

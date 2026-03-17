@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { uploadToR2 } from "@/lib/r2/upload";
 import { updateMyProfile, updateMyAvatar } from "./actions";
 
 type Designer = {
@@ -50,7 +50,6 @@ export default function DesignerProfilePanel({
     });
     const [uploading, setUploading] = useState(false);
     const [isPending, startTransition] = useTransition();
-    const supabase = createClient();
 
     const sc = STATUS_COLOR[designer.status] ?? STATUS_COLOR["여유"];
 
@@ -61,16 +60,8 @@ export default function DesignerProfilePanel({
         if (!file) return;
         setUploading(true);
         try {
-            const ext = file.name.split(".").pop();
-            const path = `${designer.id}.${ext}?t=${Date.now()}`;
-            const { error } = await supabase.storage
-                .from("avatars")
-                .upload(path, file, { upsert: true });
-            if (error) throw error;
-            const { data } = supabase.storage
-                .from("avatars")
-                .getPublicUrl(path);
-            await updateMyAvatar(designer.id, data.publicUrl);
+            const { publicUrl } = await uploadToR2("avatars", file);
+            await updateMyAvatar(designer.id, publicUrl);
         } catch (err) {
             alert("업로드 실패: " + (err as Error).message);
         } finally {

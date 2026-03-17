@@ -344,7 +344,7 @@ export default function TrashClient({
             </table>
 
             <p style={{ marginTop: 16, color: "#9ca3af", textAlign: "right" }}>
-                총 {tasks.length}건 — 영구삭제된 작업은 복구할 수 없습니다
+                영구삭제된 작업은 복구할 수 없습니다
             </p>
         </>
     );

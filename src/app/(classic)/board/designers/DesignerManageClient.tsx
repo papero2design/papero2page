@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { uploadToR2 } from "@/lib/r2/upload";
 import {
     createDesignerAccount,
     updateDesigner,
@@ -280,7 +280,6 @@ function DesignerCard({
     const [newEmail, setNewEmail] = useState("");
     const [isPending, startTransition] = useTransition();
     const [uploading, setUploading] = useState(false);
-    const supabase = createClient();
 
     const sc = STATUS_COLOR[designer.status] ?? STATUS_COLOR["여유"];
 
@@ -292,17 +291,8 @@ function DesignerCard({
         if (!file) return;
         setUploading(true);
         try {
-            const ext = file.name.split(".").pop();
-            const path = `${designer.id}.${ext}?t=${Date.now()}`;
-            const { error: upErr } = await supabase.storage
-                .from("avatars")
-                .upload(path, file, { upsert: true });
-            if (upErr) throw upErr;
-
-            const { data: urlData } = supabase.storage
-                .from("avatars")
-                .getPublicUrl(path);
-            await updateDesignerAvatar(designer.id, urlData.publicUrl);
+            const { publicUrl } = await uploadToR2("avatars", file);
+            await updateDesignerAvatar(designer.id, publicUrl);
             onRefresh();
         } catch (err) {
             alert("업로드 실패: " + (err as Error).message);
@@ -1197,7 +1187,7 @@ export default function DesignerManageClient({
                         fontFamily: "inherit",
                     }}
                 >
-                    [ + 디자이너 추가 ]
+                    + 디자이너 추가
                 </button>
             </div>
 

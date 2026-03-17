@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 interface Designer {
     id: string;
@@ -15,6 +15,9 @@ interface Props {
     priorityCount?: number; // 우선작업 — 빨강
     simpleCount?: number; // 간단작업 — 초록
     activeCount?: number; // 등록작업 — 회색
+    waitCount?: number; // 대기중
+    ingCount?: number; // 진행중
+    checkCount?: number; // 검수대기
     doneCount?: number; // 완료작업 — 파랑
 }
 
@@ -51,12 +54,26 @@ export default function BoardNav({
     simpleCount = 0,
     activeCount = 0,
     doneCount = 0,
+    waitCount = 0,
+    ingCount = 0,
+    checkCount = 0,
 }: Props) {
     const pathname = usePathname();
+    const searchParams = useSearchParams();
+    const currentStatus = searchParams.get("status");
 
-    const isActive = (href: string) => {
-        if (href === "/board") return pathname === "/board";
-        return pathname.startsWith(href);
+    const isActive = (href: string, targetStatus?: string) => {
+        // 우선작업, 간단작업 등 특정 경로일 때
+        if (targetStatus === undefined) return pathname.startsWith(href);
+
+        // 상태 탭일 때
+
+        if (pathname === "/board") {
+            if (targetStatus === "전체") return !currentStatus; // 파라미터 없으면 전체
+            return currentStatus === targetStatus;
+        }
+
+        return false;
     };
 
     const base =
@@ -89,22 +106,7 @@ export default function BoardNav({
                     </Link>
                 </li>
 
-                {/* 간단작업 — 초록 뱃지 */}
-                <li className="flex-shrink-0">
-                    <Link
-                        href="/board/simple"
-                        className={tabCls(
-                            "/board/simple",
-                            "text-green-600",
-                            "hover:text-green-500",
-                        )}
-                    >
-                        간단작업
-                        <Badge count={simpleCount} bg="#1ED67D" />
-                    </Link>
-                </li>
-
-                {/* 등록작업 (구 작업등록) — 회색 뱃지 */}
+                {/*  작업등록 — 회색 뱃지 */}
                 <li className="flex-shrink-0">
                     <Link
                         href="/board"
@@ -114,23 +116,8 @@ export default function BoardNav({
                             "hover:text-gray-800",
                         )}
                     >
-                        등록작업
+                        작업등록
                         <Badge count={activeCount} bg="#6b7280" />
-                    </Link>
-                </li>
-
-                {/* 완료작업 (구 완료) — 파랑 뱃지 */}
-                <li className="flex-shrink-0">
-                    <Link
-                        href="/board/done"
-                        className={tabCls(
-                            "/board/done",
-                            "text-blue-600",
-                            "hover:text-blue-500",
-                        )}
-                    >
-                        완료작업
-                        <Badge count={doneCount} bg="#3b82f6" />
                     </Link>
                 </li>
 
@@ -184,7 +171,19 @@ export default function BoardNav({
                         </div>
                     </li>
                 )}
-
+                {/* 완료작업 (구 완료) — 파랑 뱃지 */}
+                <li className="flex-shrink-0">
+                    <Link
+                        href="/board/done"
+                        className={tabCls(
+                            "/board/done",
+                            "text-blue-600",
+                            "hover:text-blue-500",
+                        )}
+                    >
+                        작업완료
+                    </Link>
+                </li>
                 {/* ── 그룹 3: 관리자 전용 (우측 끝) ── */}
                 {isAdmin && (
                     <>

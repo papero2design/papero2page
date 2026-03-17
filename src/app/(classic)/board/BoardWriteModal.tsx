@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef } from "react"; // useRef 추가
+import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import FileUploadField, { uploadToR2 } from "./FileUploadField";
 
 interface Designer {
     id: string;
@@ -58,8 +59,6 @@ export default function BoardWriteModal({
     const [files, setFiles] = useState<File[]>([]);
     const [submitting, setSubmitting] = useState(false);
 
-    const fileInputRef = useRef<HTMLInputElement>(null);
-
     if (!open) return null;
 
     const validate = () => {
@@ -75,52 +74,32 @@ export default function BoardWriteModal({
     };
 
     const handleSubmit = async () => {
-        console.log("작성완료 ck");
-
         const e = validate();
         if (Object.keys(e).length > 0) {
-            console.log("❌ 2. 필수 입력값 누락으로 중단됨:", e);
             setErrors(e);
-            return; // 여기서 몰래 멈추고 있었을 확률이 높아!
+            return;
         }
-
-        console.log("🚀 3. 유효성 통과! Supabase 업로드 시작!");
         setSubmitting(true);
-
         try {
             const supabase = createClient();
-
-            // ── 파일 업로드 → Storage + 메타 수집 ──
-            // ── 파일 업로드 → Storage + 메타 수집 ──
             const filePaths: string[] = [];
             const uploadedFiles: { url: string; name: string; size: number }[] =
                 [];
 
             for (const file of files) {
-                // 1. 파일 확장자 추출 (예: pdf, jpg)
-                const ext = file.name.split(".").pop();
-
-                // 2. Storage에는 한글/공백 에러가 없도록 난수로 파일명 생성
-                const randomName = Math.random().toString(36).substring(2, 10);
-                const safePath = `tasks/${Date.now()}_${randomName}.${ext}`;
-
-                const { data: upData, error: upErr } = await supabase.storage
-                    .from("task-files")
-                    .upload(safePath, file);
-
-                if (!upErr && upData) {
-                    const { data: urlData } = supabase.storage
-                        .from("task-files")
-                        .getPublicUrl(safePath);
-
-                    filePaths.push(safePath);
+                try {
+                    const { publicUrl, key } = await uploadToR2(
+                        "task-files",
+                        file,
+                    );
+                    filePaths.push(key);
                     uploadedFiles.push({
-                        url: urlData.publicUrl,
-                        name: file.name, // 3. DB에는 고객이 보는 원래 한글 파일명 그대로 저장!
+                        url: publicUrl,
+                        name: file.name,
                         size: file.size,
                     });
-                } else {
-                    console.error("Storage 업로드 실패:", upErr);
+                } catch (upErr) {
+                    console.error("파일 업로드 실패:", file.name, upErr);
                 }
             }
 
@@ -129,7 +108,6 @@ export default function BoardWriteModal({
                     ? `기타: ${form.post_processing_note}`
                     : form.post_processing;
 
-            // ── tasks 테이블 INSERT (id 받아오기) ──
             const { data: newTask, error } = await supabase
                 .from("tasks")
                 .insert({
@@ -156,7 +134,6 @@ export default function BoardWriteModal({
 
             if (error) throw error;
 
-            // ── task_files 테이블에 파일 메타 저장 ──
             if (newTask && uploadedFiles.length > 0) {
                 await supabase.from("task_files").insert(
                     uploadedFiles.map((f) => ({
@@ -189,26 +166,6 @@ export default function BoardWriteModal({
         });
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files) return;
-
-        const picked = Array.from(e.target.files);
-        const MAX_SIZE = 50 * 1024 * 1024; // 50MB
-
-        // 용량 초과 파일 검사
-        const oversizedFiles = picked.filter((f) => f.size > MAX_SIZE);
-        if (oversizedFiles.length > 0) {
-            alert(
-                "🚨 50MB 이하의 파일만 첨부 가능합니다.\n대용량 파일은 구글 드라이브나 메일로 전달 후 링크를 남겨주세요.",
-            );
-            e.target.value = ""; // input 초기화
-            return;
-        }
-
-        setFiles((prev) => [...prev, ...picked]);
-        e.target.value = "";
-    };
-
     return (
         <div
             style={{
@@ -236,7 +193,6 @@ export default function BoardWriteModal({
                     overflowY: "auto",
                     boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
                     fontFamily: "inherit",
-                    padding: 30,
                 }}
             >
                 <div
@@ -422,6 +378,12 @@ export default function BoardWriteModal({
                                     ))}
                                 </div>
                             </Row>
+                            <Row label="첨부파일">
+                                <FileUploadField
+                                    files={files}
+                                    onChange={setFiles}
+                                />
+                            </Row>
                             <Row label="상담경로">
                                 <div
                                     style={{
@@ -516,101 +478,6 @@ export default function BoardWriteModal({
                                         }}
                                     />
                                 )}
-                            </Row>
-
-                            {/* 첨부파일 — Storage 업로드 */}
-                            {/* 첨부파일 — Storage 업로드 */}
-                            <Row label="첨부파일">
-                                <div>
-                                    <label
-                                        style={{
-                                            display: "inline-block",
-                                            padding: "5px 14px",
-                                            border: "1px dashed #d1d5db",
-                                            borderRadius: 4,
-                                            background: "#f9fafb",
-                                            cursor: "pointer",
-                                            color: "#6b7280",
-                                            userSelect: "none",
-                                        }}
-                                    >
-                                        + 파일 선택 (복수 가능)
-                                        <input
-                                            type="file"
-                                            multiple
-                                            style={{ display: "none" }}
-                                            onChange={handleFileChange}
-                                        />
-                                    </label>
-
-                                    {files.length > 0 && (
-                                        <ul
-                                            style={{
-                                                margin: "6px 0 0",
-                                                padding: 0,
-                                                listStyle: "none",
-                                            }}
-                                        >
-                                            {files.map((f, i) => (
-                                                <li
-                                                    key={i}
-                                                    style={{
-                                                        display: "flex",
-                                                        alignItems: "center",
-                                                        gap: 6,
-                                                        padding: "3px 0",
-                                                        color: "#374151",
-                                                    }}
-                                                >
-                                                    <span
-                                                        style={{
-                                                            flex: 1,
-                                                            overflow: "hidden",
-                                                            textOverflow:
-                                                                "ellipsis",
-                                                            whiteSpace:
-                                                                "nowrap",
-                                                        }}
-                                                    >
-                                                        📎 {f.name}
-                                                    </span>
-                                                    <span
-                                                        style={{
-                                                            color: "#9ca3af",
-                                                            fontSize: 12,
-                                                        }}
-                                                    >
-                                                        (
-                                                        {(
-                                                            f.size / 1024
-                                                        ).toFixed(0)}
-                                                        KB)
-                                                    </span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            setFiles((prev) =>
-                                                                prev.filter(
-                                                                    (_, j) =>
-                                                                        j !== i,
-                                                                ),
-                                                            )
-                                                        }
-                                                        style={{
-                                                            background: "none",
-                                                            border: "none",
-                                                            cursor: "pointer",
-                                                            color: "#9ca3af",
-                                                            padding: "0 2px",
-                                                        }}
-                                                    >
-                                                        ✕
-                                                    </button>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    )}
-                                </div>
                             </Row>
                             <Row label="처리자">
                                 {designers.length > 0 ? (

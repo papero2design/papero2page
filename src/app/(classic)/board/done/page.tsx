@@ -9,7 +9,7 @@ const DONE_SELECT =
     "print_items, post_processing, completed_at, created_at, " +
     "designer:designers(id, name)";
 
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 15;
 
 type DoneTask = {
     id: string;

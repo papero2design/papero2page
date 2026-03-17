@@ -132,7 +132,7 @@ export default async function BoardPage({
                 .bo-btn:hover { background:#f9fafb; }
                 .pg-wrap { margin-top:20px; text-align:center; }
                 .pg-wrap span { display:inline-flex; gap:4px; flex-wrap:wrap; justify-content:center; }
-                .pg-link { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:30px; padding:0 8px; border:1px solid #e5e7eb; border-radius:4px; background:#fff; color:#6b7280; text-decoration:none; transition:background 0.1s; }
+                .pg-link { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:30px; padding:2px 8px; border:1px solid #e5e7eb; border-radius:4px; background:#fff; color:#6b7280; text-decoration:none; transition:background 0.1s; }
                 .pg-link:hover { background:#f9fafb; }
                 .pg-link.active { background:#111827; color:#fff; border-color:#111827; font-weight:700; }
             `}</style>

@@ -1,7 +1,14 @@
-// src/app/(classic)/board/stats/page.tsx
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import StatsClient from "./StatsClient";
+import {
+    BarChart3,
+    CheckCircle2,
+    Clock,
+    Trash2,
+    AlertCircle,
+} from "lucide-react";
+import Link from "next/link";
 
 export default async function StatsPage() {
     const supabase = await createClient();
@@ -23,6 +30,7 @@ export default async function StatsPage() {
         { count: totalDone },
         { count: totalPriority },
         { count: totalTrash },
+        { count: totalQuick },
     ] = await Promise.all([
         supabase
             .from("tasks")
@@ -44,6 +52,12 @@ export default async function StatsPage() {
             .from("tasks")
             .select("id", { count: "exact", head: true })
             .not("deleted_at", "is", null),
+        supabase
+            .from("tasks")
+            .select("id", { count: "exact", head: true })
+            .is("deleted_at", null)
+            .neq("status", "완료")
+            .eq("is_quick", true),
     ]);
 
     // 상태별 현황
@@ -74,121 +88,95 @@ export default async function StatsPage() {
     }
 
     return (
-        <div
-            style={{ maxWidth: 1100, margin: "0 auto", padding: "8px 0 40px" }}
-        >
+        <div className="max-w-6xl mx-auto px-4 py-8 pb-20">
             {/* 헤더 */}
-            <div style={{ marginBottom: 20 }}>
-                <h2 style={{ margin: 0, fontWeight: 800, color: "#111827" }}>
-                    작업 통계
+            <div className="mb-8 border-b border-gray-200 pb-6">
+                <h2 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
+                    <BarChart3 className="w-6 h-6 text-gray-700" />
+                    작업 통계 대시보드
                 </h2>
-                <p style={{ margin: "4px 0 0", color: "#9ca3af" }}>
-                    {fmtDate(new Date())} 기준
+                <p className="mt-1 text-sm text-gray-500">
+                    {fmtDate(new Date())} 기준 전체 작업 현황
                 </p>
             </div>
 
-            {/* 전체 현황 카드 (정적) */}
-            <div
-                style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                        "repeat(auto-fill, minmax(150px, 1fr))",
-                    gap: 10,
-                    marginBottom: 20,
-                }}
-            >
+            {/* 전체 현황 카드 */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                 {[
-                    {
-                        label: "진행 중",
-                        value: totalActive ?? 0,
-                        color: "#111827",
-                        bg: "#f9fafb",
-                    },
-                    {
-                        label: "전체 완료",
-                        value: totalDone ?? 0,
-                        color: "#15803d",
-                        bg: "#f0fdf4",
-                    },
                     {
                         label: "우선작업",
                         value: totalPriority ?? 0,
-                        color: "#dc2626",
-                        bg: "#fef2f2",
+                        icon: AlertCircle,
+                        href: "/board/quick",
                     },
+                    {
+                        label: "간단작업",
+                        value: totalQuick ?? 0,
+                        icon: AlertCircle,
+                        href: "/board/simple",
+                    },
+
+                    {
+                        label: "등록작업",
+                        value: totalActive ?? 0,
+                        icon: Clock,
+                        href: "/board",
+                    },
+                    {
+                        label: "완료작업",
+                        value: totalDone ?? 0,
+                        icon: CheckCircle2,
+                        href: "/board/done",
+                    },
+
                     {
                         label: "휴지통",
                         value: totalTrash ?? 0,
-                        color: "#9ca3af",
-                        bg: "#f9fafb",
+                        icon: Trash2,
+                        href: "/board/trash",
                     },
-                ].map(({ label, value, color, bg }) => (
-                    <div
+                ].map(({ label, value, icon: Icon, href }) => (
+                    <Link
                         key={label}
-                        style={{
-                            padding: "14px 16px",
-                            background: bg,
-                            border: "1px solid #e5e7eb",
-                            borderRadius: 10,
-                        }}
+                        href={href}
+                        className="p-5 rounded-xl border border-gray-200 bg-white flex flex-col justify-between hover:shadow-md hover:border-gray-300 transition-all cursor-pointer"
                     >
-                        <div style={{ fontWeight: 800, fontSize: 26, color }}>
+                        <div className="flex items-center justify-between mb-4">
+                            <span className="text-sm font-medium text-gray-500">
+                                {label}
+                            </span>
+                            <Icon className="w-4 h-4 text-gray-400" />
+                        </div>
+                        <div className="text-3xl font-bold text-gray-900 tracking-tight">
                             {value}
                         </div>
-                        <div style={{ color: "#6b7280", marginTop: 2 }}>
-                            {label}
-                        </div>
-                    </div>
+                    </Link>
                 ))}
             </div>
 
-            {/* 상태별 현황 (정적) */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+            {/* 상태별 현황 */}
+            <div className="flex flex-col md:flex-row gap-4 mb-10">
                 {[
-                    {
-                        label: "대기중",
-                        bg: "#f4f4f5",
-                        color: "#71717a",
-                        border: "#e4e4e7",
-                    },
-                    {
-                        label: "진행중",
-                        bg: "#fffbeb",
-                        color: "#b45309",
-                        border: "#fde68a",
-                    },
-                    {
-                        label: "검수대기",
-                        bg: "#eff6ff",
-                        color: "#1d4ed8",
-                        border: "#bfdbfe",
-                    },
-                ].map(({ label, bg, color, border }) => (
-                    <div
+                    { label: "대기중", query: "대기중" },
+                    { label: "진행중", query: "진행중" },
+                    { label: "검수대기", query: "검수대기" },
+                ].map(({ label, query }) => (
+                    <Link
                         key={label}
-                        style={{
-                            flex: 1,
-                            padding: "12px 14px",
-                            background: bg,
-                            border: `1px solid ${border}`,
-                            borderRadius: 8,
-                            textAlign: "center",
-                        }}
+                        href={`/board?status=${query}`}
+                        className="flex-1 py-4 px-6 rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-between hover:bg-white hover:shadow-sm hover:border-gray-300 transition-all cursor-pointer"
                     >
-                        <div style={{ fontWeight: 800, fontSize: 22, color }}>
-                            {statusMap[label]}
-                        </div>
-                        <div style={{ color, fontWeight: 600, marginTop: 2 }}>
+                        <span className="text-sm font-medium text-gray-600">
                             {label}
-                        </div>
-                    </div>
+                        </span>
+                        <span className="text-2xl font-bold text-gray-900">
+                            {statusMap[query]}
+                        </span>
+                    </Link>
                 ))}
             </div>
 
-            {/* 구분선 */}
-            <div style={{ borderTop: "1px solid #e5e7eb", marginBottom: 20 }} />
-
-            {/* 동적 통계 — 기간 선택 + 바차트 + 캘린더 */}
+            {/* 동적 통계 */}
             <StatsClient designers={designers ?? []} />
         </div>
     );

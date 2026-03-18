@@ -4,7 +4,6 @@
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 
-const STATUSES = ["대기중", "진행중", "검수대기"];
 const ORDER_METHODS = [
     "샘플디자인 의뢰",
     "재주문(글자수정)",
@@ -17,32 +16,33 @@ const ORDER_METHODS = [
 ];
 const ORDER_SOURCES = ["홈페이지", "스토어팜"];
 const POST_PROCESSINGS = ["없음", "단면박", "양면박", "귀도리", "기타"];
-const CONSULT_PATHS = ["네이버톡톡", "카카오톡채널", "메일", "없음"];
+const SORT_FIELDS = [
+    { value: "created_at", label: "접수일" },
+    { value: "customer_name", label: "고객이름" },
+];
 
 interface Props {
-    designers: { id: string; name: string }[];
     currentStatus: string;
-    currentDesigner: string;
     currentMethod: string;
     currentSource: string;
     currentPrint: string;
     currentPost: string;
-    currentConsult: string;
     currentDateFrom: string;
     currentDateTo: string;
+    currentSortBy: string;
+    currentSortDir: string;
 }
 
 export default function FilterBar({
-    designers,
     currentStatus,
-    currentDesigner,
     currentMethod,
     currentSource,
     currentPrint,
     currentPost,
-    currentConsult,
     currentDateFrom,
     currentDateTo,
+    currentSortBy,
+    currentSortDir,
 }: Props) {
     const router = useRouter();
     const pathname = usePathname();
@@ -63,12 +63,10 @@ export default function FilterBar({
         const params = new URLSearchParams(searchParams.toString());
         [
             "status",
-            "designer",
             "method",
             "source",
             "print",
             "post",
-            "consult",
             "dateFrom",
             "dateTo",
         ].forEach((k) => params.delete(k));
@@ -78,12 +76,10 @@ export default function FilterBar({
 
     const active = [
         currentStatus,
-        currentDesigner,
         currentMethod,
         currentSource,
         currentPrint,
         currentPost,
-        currentConsult,
         currentDateFrom,
         currentDateTo,
     ].filter(Boolean);
@@ -91,31 +87,20 @@ export default function FilterBar({
 
     return (
         <div style={{ marginBottom: 12 }}>
-            {/* 필터 행 */}
+            {/* 필터 + 정렬 행 */}
             <div
+                className="filter-bar-scroll"
                 style={{
                     display: "flex",
-                    flexWrap: "wrap",
+                    flexWrap: "nowrap",
+                    overflowX: "auto",
                     gap: 6,
                     alignItems: "center",
-                    padding: "8px 0",
+                    padding: "8px 0 10px",
+                    scrollbarWidth: "thin",
+                    scrollbarColor: "#e5e7eb transparent",
                 }}
             >
-                <Sel
-                    value={currentStatus}
-                    onChange={(v) => setParam("status", v)}
-                    placeholder="상태"
-                    options={STATUSES.map((s) => ({ value: s, label: s }))}
-                />
-                <Sel
-                    value={currentDesigner}
-                    onChange={(v) => setParam("designer", v)}
-                    placeholder="담당 디자이너"
-                    options={designers.map((d) => ({
-                        value: d.id,
-                        label: d.name,
-                    }))}
-                />
                 <Sel
                     value={currentMethod}
                     onChange={(v) => setParam("method", v)}
@@ -137,12 +122,6 @@ export default function FilterBar({
                         label: p,
                     }))}
                 />
-                <Sel
-                    value={currentConsult}
-                    onChange={(v) => setParam("consult", v)}
-                    placeholder="상담경로"
-                    options={CONSULT_PATHS.map((c) => ({ value: c, label: c }))}
-                />
 
                 {/* 인쇄항목 텍스트 검색 */}
                 <input
@@ -158,11 +137,12 @@ export default function FilterBar({
                         outline: "none",
                         fontFamily: "inherit",
                         width: 120,
+                        flexShrink: 0,
                     }}
                 />
 
                 {/* 날짜 범위 */}
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
                     <input
                         type="date"
                         value={currentDateFrom}
@@ -180,11 +160,55 @@ export default function FilterBar({
                     />
                 </div>
 
+                {/* 구분선 */}
+                <div
+                    style={{
+                        width: 1,
+                        height: 20,
+                        background: "#e5e7eb",
+                        margin: "0 2px",
+                        flexShrink: 0,
+                    }}
+                />
+
+                {/* 정렬 */}
+                <Sel
+                    value={currentSortBy}
+                    onChange={(v) => setParam("sortBy", v)}
+                    placeholder="정렬 기준"
+                    options={SORT_FIELDS}
+                />
+                <button
+                    onClick={() =>
+                        setParam(
+                            "sortDir",
+                            currentSortDir === "asc" ? "desc" : "asc",
+                        )
+                    }
+                    title={
+                        currentSortDir === "asc" ? "오래된순" : "최신순(기본)"
+                    }
+                    style={{
+                        padding: "5px 10px",
+                        border: "1px solid #e5e7eb",
+                        borderRadius: 6,
+                        background: "#fff",
+                        color: "#6b7280",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        fontSize: "inherit",
+                        whiteSpace: "nowrap",
+                        flexShrink: 0,
+                    }}
+                >
+                    {currentSortDir === "asc" ? "↑ 오름차순" : "↓ 내림차순"}
+                </button>
+
                 {hasFilter && (
                     <button
                         onClick={clearAll}
                         style={{
-                            padding: "4px 10px",
+                            padding: "5px 10px",
                             border: "1px solid #fecaca",
                             borderRadius: 6,
                             background: "#fff",
@@ -192,6 +216,8 @@ export default function FilterBar({
                             cursor: "pointer",
                             fontWeight: 600,
                             fontFamily: "inherit",
+                            flexShrink: 0,
+                            whiteSpace: "nowrap",
                         }}
                     >
                         초기화 ✕
@@ -213,12 +239,6 @@ export default function FilterBar({
                         <Badge
                             label={`상태: ${currentStatus}`}
                             onRemove={() => setParam("status", "")}
-                        />
-                    )}
-                    {currentDesigner && (
-                        <Badge
-                            label={`디자이너: ${designers.find((d) => d.id === currentDesigner)?.name ?? currentDesigner}`}
-                            onRemove={() => setParam("designer", "")}
                         />
                     )}
                     {currentMethod && (
@@ -243,12 +263,6 @@ export default function FilterBar({
                         <Badge
                             label={`후가공: ${currentPost}`}
                             onRemove={() => setParam("post", "")}
-                        />
-                    )}
-                    {currentConsult && (
-                        <Badge
-                            label={`상담경로: ${currentConsult}`}
-                            onRemove={() => setParam("consult", "")}
                         />
                     )}
                     {currentDateFrom && (
@@ -298,6 +312,8 @@ function Sel({
                 outline: "none",
                 fontFamily: "inherit",
                 appearance: "none",
+                flexShrink: 0,
+                whiteSpace: "nowrap",
             }}
         >
             <option value="">{placeholder}</option>

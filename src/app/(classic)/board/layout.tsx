@@ -59,16 +59,16 @@ export default async function BoardLayout({
                 <div id="wrap">
                     <header
                         id="header"
-                        className="bg-white border-b border-gray-200 px-6 flex items-center justify-between h-30"
+                        className="bg-white border-b border-gray-200 px-6 flex items-center justify-between pt-4 pb-4"
                     >
                         <h1 className="flex items-center text-4xl font-black tracking-tighter shrink-0">
                             <Link href={`/board/designers/${myDesigner.id}`}>
                                 <Image
                                     src="/logo.png"
                                     alt="우리 디자인을 부탁해"
-                                    width={160}
-                                    height={60}
-                                    className="object-contain h-16 w-auto"
+                                    width={240}
+                                    height={100}
+                                    className="object-contain h-18 w-auto"
                                     priority
                                 />
                             </Link>
@@ -136,7 +136,7 @@ export default async function BoardLayout({
                             <LogoutButton />
                         </div>
                     </header>
-                    <div id="subContainer" className="p-6">
+                    <div id="subContainer" className="px-4 pt-5 pb-10">
                         {children}
                     </div>
                 </div>
@@ -153,7 +153,6 @@ export default async function BoardLayout({
 
     const [
         { count: priorityCount },
-        { count: simpleCount },
         { count: activeCount },
         { count: doneCount },
     ] = await Promise.all([
@@ -168,12 +167,8 @@ export default async function BoardLayout({
             .select("id", { count: "exact", head: true })
             .is("deleted_at", null)
             .neq("status", "완료")
-            .eq("is_quick", true),
-        supabase
-            .from("tasks")
-            .select("id", { count: "exact", head: true })
-            .is("deleted_at", null)
-            .neq("status", "완료"),
+            .eq("is_priority", false)
+            .is("assigned_designer_id", null),
         supabase
             .from("tasks")
             .select("id", { count: "exact", head: true })
@@ -185,16 +180,16 @@ export default async function BoardLayout({
         <div id="wrap">
             <header
                 id="header"
-                className="bg-white border-b border-gray-200 px-6 flex items-center justify-between h-30"
+                className="bg-white border-b border-gray-200 px-6 flex items-center justify-between pt-4 pb-4"
             >
                 <h1 className="flex items-center text-4xl font-black tracking-tighter shrink-0">
                     <Link href="/board">
                         <Image
                             src="/logo.png"
                             alt="우리 디자인을 부탁해"
-                            width={160}
-                            height={60}
-                            className="object-contain h-16 w-auto"
+                            width={240}
+                            height={100}
+                            className="object-contain h-18 w-auto"
                             priority
                         />
                     </Link>
@@ -238,12 +233,11 @@ export default async function BoardLayout({
                 designers={designers ?? []}
                 isAdmin={isAdmin}
                 priorityCount={priorityCount ?? 0}
-                simpleCount={simpleCount ?? 0}
                 activeCount={activeCount ?? 0}
                 doneCount={doneCount ?? 0}
             />
 
-            <div id="subContainer" className="p-6">
+            <div id="subContainer" className="px-4 pt-5 pb-10">
                 {children}
             </div>
         </div>

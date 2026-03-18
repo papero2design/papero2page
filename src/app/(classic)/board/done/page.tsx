@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import DoneClient from "./DoneClient";
+import Pagination from "../Pagination";
 
 const DONE_SELECT =
     "id, task_number, customer_name, order_source, order_method, " +
@@ -60,16 +61,7 @@ export default async function DonePage({
         `/board/done?page=${p}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
 
     return (
-        <>
-            <style>{`
-                .pg-wrap { margin-top:20px; text-align:center; }
-                .pg-wrap span { display:inline-flex; gap:4px; flex-wrap:wrap; justify-content:center; }
-                .pg-link { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:30px; padding:0 8px; border:1px solid #e5e7eb; border-radius:4px; background:#fff; color:#6b7280; text-decoration:none; }
-                .pg-link:hover { background:#f9fafb; }
-                .pg-link.active { background:#111827; color:#fff; border-color:#111827; font-weight:700; }
-            `}</style>
-
-            <div
+        <div
                 style={{
                     width: "100%",
                     maxWidth: 1260,
@@ -206,37 +198,7 @@ export default async function DonePage({
                     </tbody>
                 </table>
 
-                {totalPages > 1 && (
-                    <nav className="pg-wrap">
-                        <span>
-                            {page > 1 && (
-                                <Link href={pageUrl(1)} className="pg-link">
-                                    맨처음
-                                </Link>
-                            )}
-                            {Array.from({ length: totalPages }, (_, i) => i + 1)
-                                .filter((p) => Math.abs(p - page) <= 4)
-                                .map((p) => (
-                                    <Link
-                                        key={p}
-                                        href={pageUrl(p)}
-                                        className={`pg-link${p === page ? " active" : ""}`}
-                                    >
-                                        {p}
-                                    </Link>
-                                ))}
-                            {page < totalPages && (
-                                <Link
-                                    href={pageUrl(totalPages)}
-                                    className="pg-link"
-                                >
-                                    맨끝
-                                </Link>
-                            )}
-                        </span>
-                    </nav>
-                )}
+                <Pagination page={page} totalPages={totalPages} pageUrl={pageUrl} />
             </div>
-        </>
     );
 }

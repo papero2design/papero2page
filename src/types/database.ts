@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────────
 
 export type DesignerStatus = "여유" | "작업중" | "바쁨";
-export type TaskStatus = "대기중" | "진행중" | "검수대기" | "완료";
+export type TaskStatus = "작업중" | "완료";
 
 // ── designers 테이블 ──────────────────────────────────────────
 export interface Designer {
@@ -35,6 +35,7 @@ export interface Task {
     consult_path: string | null;
     consult_link: string | null;
     special_details: string | null; // 처리특이사항
+    registered_by: string | null; // 등록자
 
     // 상태 및 할당
     assigned_designer_id: string | null; // FK → designers.id
@@ -52,30 +53,21 @@ export interface Task {
 }
 
 // ── task_logs 테이블 ──────────────────────────────────────────
-// migrate-task-logs.sql 실행 후 이 스키마와 일치함
-// actions.ts의 insertLog()와 컬럼명 반드시 일치
 export interface TaskLog {
     id: string;
     task_id: string;
-    user_id: string | null; // auth.users.id — 로그인 사용자
-    changed_field: string; // 변경 필드명 (예: 'status', 'assigned_designer')
-    old_value: string | null; // 변경 전 값
-    new_value: string | null; // 변경 후 값
-    reason: string | null; // 사용자 입력 사유
+    user_id: string | null;
+    changed_field: string;
+    old_value: string | null;
+    new_value: string | null;
+    reason: string | null;
     created_at: string;
 }
 
 // ── Supabase 조인 결과 타입 ───────────────────────────────────
-// tasks.assigned_designer_id → designers.id 는 N:1 (다대일) 관계
-// PostgREST는 N:1 조인을 단일 객체로 반환 (배열 아님!)
-//   올바른 접근: task.designer?.name
-//   잘못된 접근: task.designer?.[0]?.name  ← 항상 undefined
-// 반대로 1:N (일대다, 예: task_files)일 때만 배열로 반환됨
 export type DesignerJoin = { id: string; name: string } | null;
 
 // ── 게시판 목록 타입 ──────────────────────────────────────────
-// page.tsx의 TASK_SELECT와 반드시 일치
-// 새 필드 추가: Task → Pick → TASK_SELECT 순서로 추가
 export type TaskWithDesigner = Pick<
     Task,
     | "id"
@@ -90,14 +82,13 @@ export type TaskWithDesigner = Pick<
     | "consult_path"
     | "consult_link"
     | "special_details"
+    | "registered_by"
     | "status"
     | "is_priority"
     | "is_quick"
     | "created_at"
     | "deleted_at"
 > & {
-    // N:1 조인 → 단일 객체 (null이면 미배정)
-    // 접근: task.designer?.name, task.designer?.id
     designer: DesignerJoin;
 };
 
@@ -126,21 +117,23 @@ export interface TaskFormValues {
     consult_link: string;
     special_details: string;
     assigned_designer_id: string;
+    registered_by: string;
     is_priority: boolean;
     is_quick: boolean;
 }
 
 export const TASK_FORM_DEFAULTS: TaskFormValues = {
-    order_source: "",
+    order_source: "스토어팜",
     customer_name: "",
     order_method: "",
     order_method_note: "",
     print_items: "",
-    post_processing: "",
+    post_processing: "없음",
     consult_path: "",
     consult_link: "",
     special_details: "",
     assigned_designer_id: "",
+    registered_by: "",
     is_priority: false,
     is_quick: false,
 };

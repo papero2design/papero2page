@@ -23,9 +23,6 @@ export default function LoginPage() {
         setError("");
         setLoading(true);
 
-        console.log("email", email);
-        console.log("email", password);
-
         const { data, error: authError } =
             await supabase.auth.signInWithPassword({ email, password });
 
@@ -94,7 +91,7 @@ export default function LoginPage() {
                     <Image
                         src="/logo.png"
                         alt="우리 디자인을 부탁해"
-                        width={400}
+                        width={350}
                         height={150}
                         style={{ objectFit: "contain" }}
                         priority

@@ -6,15 +6,16 @@ import { TaskWithDesigner } from "@/types/database";
 import BoardTable from "./BoardTable";
 import WriteButton from "./WriteButton";
 import FilterBar from "./FilterBar";
+import Pagination from "./Pagination";
 
 const TASK_SELECT =
     "id, task_number, order_source, customer_name, order_method, order_method_note, " +
     "print_items, post_processing, file_paths, " +
-    "consult_path, consult_link, special_details, " +
+    "consult_path, consult_link, special_details, registered_by, " +
     "status, is_priority, is_quick, created_at, deleted_at, " +
     "designer:designers(id, name)";
 
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 15;
 
 export default async function BoardPage({
     searchParams,
@@ -23,14 +24,14 @@ export default async function BoardPage({
         page?: string;
         q?: string;
         status?: string;
-        designer?: string;
         method?: string;
         source?: string;
         print?: string;
         post?: string;
-        consult?: string;
         dateFrom?: string;
         dateTo?: string;
+        sortBy?: string;
+        sortDir?: string;
     }>;
 }) {
     const supabase = await createClient();
@@ -60,38 +61,38 @@ export default async function BoardPage({
         page: pageParam,
         q,
         status: fStatus,
-        designer: fDesigner,
         method: fMethod,
         source: fSource,
         print: fPrint,
         post: fPost,
-        consult: fConsult,
         dateFrom: fDateFrom,
         dateTo: fDateTo,
+        sortBy: fSortBy,
+        sortDir: fSortDir,
     } = await searchParams;
 
     const page = Math.max(1, Number(pageParam ?? 1));
     const from = (page - 1) * PAGE_SIZE;
+    const sortBy = fSortBy ?? "created_at";
+    const sortAsc = fSortDir === "asc";
 
     let query = supabase
         .from("tasks")
         .select(TASK_SELECT, { count: "exact" })
         .is("deleted_at", null)
         .neq("status", "완료")
-        .order("is_priority", { ascending: false })
-        .order("created_at", { ascending: false })
+        .eq("is_priority", false)
+        .is("assigned_designer_id", null)
+        .order(sortBy, { ascending: sortAsc })
         .range(from, from + PAGE_SIZE - 1);
 
-    // 검색 + 필터 전부 적용
     if (q?.trim()) query = query.ilike("customer_name", `%${q.trim()}%`);
     if (fStatus) query = query.eq("status", fStatus);
-    if (fDesigner) query = query.eq("assigned_designer_id", fDesigner);
     if (fMethod) query = query.eq("order_method", fMethod);
     if (fSource) query = query.eq("order_source", fSource);
     if (fPrint?.trim())
         query = query.ilike("print_items", `%${fPrint.trim()}%`);
-    if (fPost) query = query.eq("post_processing", fPost);
-    if (fConsult) query = query.eq("consult_path", fConsult);
+    if (fPost) query = query.ilike("post_processing", `${fPost}%`);
     if (fDateFrom) query = query.gte("created_at", `${fDateFrom}T00:00:00`);
     if (fDateTo) query = query.lte("created_at", `${fDateTo}T23:59:59`);
 
@@ -114,30 +115,19 @@ export default async function BoardPage({
         params.set("page", String(p));
         if (q) params.set("q", q);
         if (fStatus) params.set("status", fStatus);
-        if (fDesigner) params.set("designer", fDesigner);
         if (fMethod) params.set("method", fMethod);
         if (fSource) params.set("source", fSource);
         if (fPrint) params.set("print", fPrint);
         if (fPost) params.set("post", fPost);
-        if (fConsult) params.set("consult", fConsult);
         if (fDateFrom) params.set("dateFrom", fDateFrom);
         if (fDateTo) params.set("dateTo", fDateTo);
+        if (fSortBy) params.set("sortBy", fSortBy);
+        if (fSortDir) params.set("sortDir", fSortDir);
         return `/board?${params.toString()}`;
     };
 
     return (
-        <>
-            <style>{`
-                .bo-btn { display:inline-block; padding:6px 14px; font-weight:600; border:1px solid #e5e7eb; border-radius:4px; background:#fff; color:#374151; cursor:pointer; text-decoration:none; transition:background 0.1s; }
-                .bo-btn:hover { background:#f9fafb; }
-                .pg-wrap { margin-top:20px; text-align:center; }
-                .pg-wrap span { display:inline-flex; gap:4px; flex-wrap:wrap; justify-content:center; }
-                .pg-link { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:30px; padding:2px 8px; border:1px solid #e5e7eb; border-radius:4px; background:#fff; color:#6b7280; text-decoration:none; transition:background 0.1s; }
-                .pg-link:hover { background:#f9fafb; }
-                .pg-link.active { background:#111827; color:#fff; border-color:#111827; font-weight:700; }
-            `}</style>
-
-            <div
+        <div
                 style={{
                     width: "100%",
                     maxWidth: 1260,
@@ -176,16 +166,15 @@ export default async function BoardPage({
                 </div>
 
                 <FilterBar
-                    designers={designers ?? []}
                     currentStatus={fStatus ?? ""}
-                    currentDesigner={fDesigner ?? ""}
                     currentMethod={fMethod ?? ""}
                     currentSource={fSource ?? ""}
                     currentPrint={fPrint ?? ""}
                     currentPost={fPost ?? ""}
-                    currentConsult={fConsult ?? ""}
                     currentDateFrom={fDateFrom ?? ""}
                     currentDateTo={fDateTo ?? ""}
+                    currentSortBy={fSortBy ?? ""}
+                    currentSortDir={fSortDir ?? "desc"}
                 />
 
                 <BoardTable
@@ -194,40 +183,11 @@ export default async function BoardPage({
                     from={from}
                     designers={designers ?? []}
                     isAdmin={isAdmin}
-                    writeButton={<WriteButton designers={designers ?? []} />}
+                    canEditDesigner={isAdmin}
+                    writeButton={<WriteButton />}
                 />
 
-                {totalPages > 1 && (
-                    <nav className="pg-wrap">
-                        <span>
-                            {page > 1 && (
-                                <Link href={pageUrl(1)} className="pg-link">
-                                    맨처음
-                                </Link>
-                            )}
-                            {Array.from({ length: totalPages }, (_, i) => i + 1)
-                                .filter((p) => Math.abs(p - page) <= 4)
-                                .map((p) => (
-                                    <Link
-                                        key={p}
-                                        href={pageUrl(p)}
-                                        className={`pg-link${p === page ? " active" : ""}`}
-                                    >
-                                        {p}
-                                    </Link>
-                                ))}
-                            {page < totalPages && (
-                                <Link
-                                    href={pageUrl(totalPages)}
-                                    className="pg-link"
-                                >
-                                    맨끝
-                                </Link>
-                            )}
-                        </span>
-                    </nav>
-                )}
+                <Pagination page={page} totalPages={totalPages} pageUrl={pageUrl} />
             </div>
-        </>
     );
 }

@@ -68,7 +68,6 @@ async function insertLog(
 function revalidateAll() {
     revalidatePath("/board");
     revalidatePath("/board/quick");
-    revalidatePath("/board/simple");
     revalidatePath("/board/done");
     revalidatePath("/board/stats");
     revalidatePath("/board/trash");
@@ -90,6 +89,7 @@ export async function createTask(data: {
     consult_link: string | null;
     special_details: string | null;
     assigned_designer_id: string | null;
+    registered_by: string | null;
     is_priority: boolean;
     is_quick: boolean;
 }) {
@@ -110,7 +110,7 @@ export async function createTask(data: {
         userId,
         "status",
         null,
-        "대기중",
+        "작업중",
         `작업 등록`,
         userName,
     );
@@ -336,6 +336,42 @@ export async function deleteTasks(ids: string[], reason?: string | null) {
                 null,
                 "휴지통",
                 reason,
+                userName,
+            ),
+        ),
+    );
+    revalidateAll();
+}
+
+// ─────────────────────────────────────────────────────────────
+// 일괄 담당 디자이너 변경
+// ─────────────────────────────────────────────────────────────
+
+export async function bulkUpdateDesigner(
+    ids: string[],
+    designerId: string | null,
+    designerName: string | null,
+) {
+    if (ids.length === 0) return;
+    const { supabase, userId } = await getClient();
+    const userName = await getCurrentUserName(supabase, userId);
+
+    const { error } = await supabase
+        .from("tasks")
+        .update({ assigned_designer_id: designerId })
+        .in("id", ids);
+    if (error) throw new Error(`일괄 디자이너 변경 실패: ${error.message}`);
+
+    await Promise.all(
+        ids.map((id) =>
+            insertLog(
+                supabase,
+                id,
+                userId,
+                "assigned_designer",
+                null,
+                designerName ?? "미배정",
+                "일괄 변경",
                 userName,
             ),
         ),

@@ -6,31 +6,29 @@ import { TaskWithDesigner } from "@/types/database";
 import BoardTable from "../../BoardTable";
 import DesignerProfilePanel from "./DesignerProfilePanel";
 import WriteButton from "../../WriteButton";
+import Pagination from "../../Pagination";
 
 const TASK_SELECT =
     "id, task_number, order_source, customer_name, order_method, order_method_note, " +
     "print_items, post_processing, file_paths, " +
-    "consult_path, consult_link, special_details, " +
+    "consult_path, special_details, registered_by, " +
     "status, is_priority, is_quick, created_at, deleted_at, " +
     "designer:designers(id, name)";
 
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 15;
 
-const STATUS_COLORS: Record<
-    string,
-    { bg: string; color: string; border: string }
-> = {
-    대기중: { bg: "#f4f4f5", color: "#71717a", border: "#e4e4e7" },
-    진행중: { bg: "#fffbeb", color: "#b45309", border: "#fde68a" },
-    검수대기: { bg: "#eff6ff", color: "#1d4ed8", border: "#bfdbfe" },
-};
+type Tab = "active" | "done" | "priority";
 
 export default async function DesignerBoardPage({
     params,
     searchParams,
 }: {
     params: Promise<{ id: string }>;
-    searchParams: Promise<{ page?: string; status?: string; q?: string }>;
+    searchParams: Promise<{
+        tab?: string;
+        page?: string;
+        q?: string;
+    }>;
 }) {
     const supabase = await createClient();
     const {
@@ -47,24 +45,28 @@ export default async function DesignerBoardPage({
     const isDesigner = profile?.role === "designer";
 
     const { id } = await params;
-    const { page: pageParam, status: filterStatus, q } = await searchParams;
+    const { tab: tabParam, page: pageParam, q } = await searchParams;
+
+    const tab: Tab =
+        tabParam === "done" ? "done" : tabParam === "priority" ? "priority" : "active";
 
     // 디자이너 정보 조회
     const { data: designer } = await supabase
         .from("designers")
-        .select("id, name, status, avatar_url, user_id")
+        .select("id, name, status, avatar_url, user_id, music_title, music_link")
         .eq("id", id)
         .single();
 
     if (!designer) notFound();
 
-    // notFound() 이후 TypeScript 타입 좁히기
     const d = designer as {
         id: string;
         name: string;
         status: string;
         avatar_url: string | null;
         user_id: string | null;
+        music_title: string | null;
+        music_link: string | null;
     };
 
     // 권한 체크: 관리자 또는 본인만 접근 가능
@@ -72,23 +74,32 @@ export default async function DesignerBoardPage({
         redirect("/board");
     }
 
-    // 본인 여부 (디자이너가 자기 페이지 보는 경우)
     const isOwn = isDesigner && d.user_id === user.id;
+    const canEditDesigner = isAdmin || isOwn;
 
     const page = Math.max(1, Number(pageParam ?? 1));
     const from = (page - 1) * PAGE_SIZE;
 
+    // 탭별 쿼리
     let query = supabase
         .from("tasks")
         .select(TASK_SELECT, { count: "exact" })
         .is("deleted_at", null)
-        .neq("status", "완료")
-        .eq("assigned_designer_id", id)
-        .order("is_priority", { ascending: false })
+        .eq("assigned_designer_id", id);
+
+    if (tab === "active") {
+        query = query.neq("status", "완료").eq("is_priority", false);
+    } else if (tab === "done") {
+        query = query.eq("status", "완료");
+    } else {
+        // priority
+        query = query.neq("status", "완료").eq("is_priority", true);
+    }
+
+    query = query
         .order("created_at", { ascending: false })
         .range(from, from + PAGE_SIZE - 1);
 
-    if (filterStatus) query = query.eq("status", filterStatus);
     if (q?.trim()) query = query.ilike("customer_name", `%${q.trim()}%`);
 
     const { data, count, error } = await query;
@@ -98,80 +109,56 @@ export default async function DesignerBoardPage({
     const total = count ?? 0;
     const totalPages = Math.ceil(total / PAGE_SIZE);
 
-    // 상태별 통계
-    const { data: statRows } = await supabase
-        .from("tasks")
-        .select("status")
-        .is("deleted_at", null)
-        .neq("status", "완료")
-        .eq("assigned_designer_id", id);
-
-    const statMap: Record<string, number> = {
-        대기중: 0,
-        진행중: 0,
-        검수대기: 0,
-    };
-    (statRows ?? []).forEach((r) => {
-        if (statMap[r.status] !== undefined) statMap[r.status]++;
-    });
-
-    // 전체 완료 건수
-    const { count: doneCount } = await supabase
-        .from("tasks")
-        .select("id", { count: "exact", head: true })
-        .is("deleted_at", null)
-        .eq("status", "완료")
-        .eq("assigned_designer_id", id);
-
-    // 우선작업 건수
-    const { count: priorityCount } = await supabase
-        .from("tasks")
-        .select("id", { count: "exact", head: true })
-        .is("deleted_at", null)
-        .neq("status", "완료")
-        .eq("assigned_designer_id", id)
-        .eq("is_priority", true);
+    // 탭 카운트 (3개 동시 조회)
+    const [{ count: activeCount }, { count: doneCount }, { count: priorityCount }] =
+        await Promise.all([
+            supabase
+                .from("tasks")
+                .select("id", { count: "exact", head: true })
+                .is("deleted_at", null)
+                .eq("assigned_designer_id", id)
+                .neq("status", "완료")
+                .eq("is_priority", false),
+            supabase
+                .from("tasks")
+                .select("id", { count: "exact", head: true })
+                .is("deleted_at", null)
+                .eq("assigned_designer_id", id)
+                .eq("status", "완료"),
+            supabase
+                .from("tasks")
+                .select("id", { count: "exact", head: true })
+                .is("deleted_at", null)
+                .eq("assigned_designer_id", id)
+                .neq("status", "완료")
+                .eq("is_priority", true),
+        ]);
 
     const stats = {
-        active: total,
+        active: activeCount ?? 0,
         done: doneCount ?? 0,
         priority: priorityCount ?? 0,
-        statusMap: statMap,
+        statusMap: {},
     };
 
-    const allDesigners = isAdmin
-        ? ((
-              await supabase
-                  .from("designers")
-                  .select("id, name")
-                  .eq("is_active", true)
-                  .order("name")
-          ).data ?? [])
+    const allDesigners = canEditDesigner
+        ? ((await supabase.from("designers").select("id, name").eq("is_active", true).order("name")).data ?? [])
         : [];
 
-    const pageUrl = (p: number) =>
-        `/board/designers/${id}?page=${p}${filterStatus ? `&status=${filterStatus}` : ""}`;
+    const tabUrl = (t: Tab, p = 1) =>
+        `/board/designers/${id}?tab=${t}&page=${p}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
 
-    const ds: Record<string, { dot: string }> = {
-        여유: { dot: "#1ED67D" },
-        작업중: { dot: "#f59e0b" },
-        바쁨: { dot: "#ef4444" },
-    };
-    const dot = ds[d.status]?.dot ?? "#d1d5db";
+    const pageUrl = (p: number) =>
+        `/board/designers/${id}?tab=${tab}&page=${p}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
+
+    const TABS: { key: Tab; label: string; count: number }[] = [
+        { key: "active", label: "진행중", count: activeCount ?? 0 },
+        { key: "done", label: "완료", count: doneCount ?? 0 },
+        { key: "priority", label: "우선작업", count: priorityCount ?? 0 },
+    ];
 
     return (
-        <>
-            <style>{`
-                .bo-btn { display:inline-block; padding:6px 14px; font-weight:600; border:1px solid #e5e7eb; border-radius:4px; background:#fff; color:#374151; cursor:pointer; text-decoration:none; transition:background 0.1s; }
-                .bo-btn:hover { background:#f9fafb; }
-                .pg-wrap { margin-top:20px; text-align:center; }
-                .pg-wrap span { display:inline-flex; gap:4px; flex-wrap:wrap; justify-content:center; }
-                .pg-link { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:30px; padding:0 8px; border:1px solid #e5e7eb; border-radius:4px; background:#fff; color:#6b7280; text-decoration:none; }
-                .pg-link:hover { background:#f9fafb; }
-                .pg-link.active { background:#111827; color:#fff; border-color:#111827; font-weight:700; }
-            `}</style>
-
-            <div
+        <div
                 style={{
                     width: "100%",
                     maxWidth: 1260,
@@ -179,106 +166,106 @@ export default async function DesignerBoardPage({
                     padding: "0 16px 40px",
                 }}
             >
-                {/* 프로필 + 통계 패널 */}
+                {/* 프로필 패널 */}
                 <DesignerProfilePanel
                     designer={d}
                     stats={stats}
                     isOwn={isOwn}
                 />
 
-                {/* 상태 필터 탭 */}
-                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                    {(["대기중", "진행중", "검수대기"] as const).map((s) => {
-                        const sc = STATUS_COLORS[s];
-                        const isActive = filterStatus === s;
+                {/* 탭 버튼 */}
+                <div
+                    style={{
+                        display: "flex",
+                        gap: 8,
+                        marginBottom: 16,
+                        borderBottom: "2px solid #e5e7eb",
+                        paddingBottom: 0,
+                    }}
+                >
+                    {TABS.map(({ key, label, count }) => {
+                        const isActive = tab === key;
+                        const color =
+                            key === "priority"
+                                ? "#dc2626"
+                                : key === "done"
+                                  ? "#15803d"
+                                  : "#111827";
                         return (
                             <Link
-                                key={s}
-                                href={`/board/designers/${id}?status=${isActive ? "" : s}`}
+                                key={key}
+                                href={tabUrl(key)}
                                 style={{
-                                    display: "flex",
+                                    display: "inline-flex",
                                     alignItems: "center",
                                     gap: 6,
-                                    padding: "6px 14px",
-                                    borderRadius: 8,
+                                    padding: "8px 16px",
+                                    fontWeight: 700,
+                                    color: isActive ? color : "#9ca3af",
+                                    borderBottom: isActive
+                                        ? `2px solid ${color}`
+                                        : "2px solid transparent",
+                                    marginBottom: -2,
                                     textDecoration: "none",
-                                    background: isActive ? sc.bg : "#fff",
-                                    border: `1px solid ${isActive ? sc.border : "#e5e7eb"}`,
-                                    color: isActive ? sc.color : "#6b7280",
-                                    fontWeight: isActive ? 700 : 400,
-                                    transition: "all 0.1s",
+                                    transition: "color 0.1s",
+                                    whiteSpace: "nowrap",
                                 }}
                             >
+                                {label}
                                 <span
                                     style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        minWidth: 20,
+                                        height: 20,
+                                        padding: "0 6px",
+                                        borderRadius: 99,
+                                        background: isActive ? color : "#e5e7eb",
+                                        color: isActive ? "#fff" : "#6b7280",
+                                        fontSize: 11,
                                         fontWeight: 800,
-                                        color: isActive ? sc.color : "#111827",
                                     }}
                                 >
-                                    {statMap[s]}
+                                    {count > 99 ? "99+" : count}
                                 </span>
-                                <span>{s}</span>
                             </Link>
                         );
                     })}
+
+                    <div style={{ flex: 1 }} />
+
+                    {isAdmin && (
+                        <div style={{ display: "flex", alignItems: "center", paddingBottom: 4 }}>
+                            <WriteButton />
+                        </div>
+                    )}
                 </div>
 
-                {/* 등록하기 버튼 — 관리자만 */}
-                {isAdmin && (
-                    <div
-                        style={{
-                            display: "flex",
-                            justifyContent: "flex-end",
-                            marginBottom: 8,
-                        }}
-                    >
-                        <WriteButton designers={allDesigners} />
-                    </div>
+                {/* 검색결과 안내 */}
+                {q && (
+                    <p style={{ color: "#6b7280", marginBottom: 8 }}>
+                        &quot;{q}&quot; 검색결과{" "}
+                        <Link
+                            href={tabUrl(tab)}
+                            style={{ marginLeft: 6, color: "#ef4444", textDecoration: "none" }}
+                        >
+                            ✕
+                        </Link>
+                    </p>
                 )}
 
-                {/* 작업 목록
-                    - isAdmin: 전체 수정 가능
-                    - isOwn(본인 디자이너): 상태 변경만 가능 (isAdmin=false)
-                */}
                 <BoardTable
                     tasks={tasks}
                     total={total}
                     from={from}
                     designers={allDesigners}
                     isAdmin={isAdmin}
+                    canEditDesigner={canEditDesigner}
+                    writeButton={undefined}
                 />
 
-                {totalPages > 1 && (
-                    <nav className="pg-wrap">
-                        <span>
-                            {page > 1 && (
-                                <Link href={pageUrl(1)} className="pg-link">
-                                    맨처음
-                                </Link>
-                            )}
-                            {Array.from({ length: totalPages }, (_, i) => i + 1)
-                                .filter((p) => Math.abs(p - page) <= 4)
-                                .map((p) => (
-                                    <Link
-                                        key={p}
-                                        href={pageUrl(p)}
-                                        className={`pg-link${p === page ? " active" : ""}`}
-                                    >
-                                        {p}
-                                    </Link>
-                                ))}
-                            {page < totalPages && (
-                                <Link
-                                    href={pageUrl(totalPages)}
-                                    className="pg-link"
-                                >
-                                    맨끝
-                                </Link>
-                            )}
-                        </span>
-                    </nav>
-                )}
+                <Pagination page={page} totalPages={totalPages} pageUrl={pageUrl} />
             </div>
-        </>
     );
 }

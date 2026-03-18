@@ -1,18 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import FileUploadField, { uploadToR2 } from "./FileUploadField";
 
-interface Designer {
-    id: string;
-    name: string;
-}
 interface Props {
     open: boolean;
     onClose: () => void;
     onSuccess: () => void;
-    designers?: Designer[];
 }
 
 const ORDER_SOURCES = ["홈페이지", "스토어팜"];
@@ -27,37 +22,51 @@ const ORDER_METHODS = [
     "기타",
 ];
 const POST_PROCESSINGS = ["없음", "단면박", "양면박", "귀도리", "기타"];
+const BOX_TYPES = ["단면박", "양면박"];
 const FILE_PATHS = ["게시판", "메일", "없음"];
 const CONSULT_PATHS = ["네이버톡톡", "카카오톡채널", "메일", "없음"];
-const QUICK_METHODS = ["인쇄만", "재주문(수정X)"];
 
 const INIT = {
-    order_source: "" as string,
+    order_source: "스토어팜" as string,
     customer_name: "",
     order_method: "" as string,
     order_method_note: "",
     print_items: "",
     post_processing: "없음" as string,
+    귀도리_size: "4mm" as "4mm" | "6mm",
     post_processing_note: "",
     file_path: "없음" as string,
     consult_path: "없음" as string,
-    consult_link: "",
     special_details_yn: "없음" as "있음" | "없음",
     special_details: "",
-    assigned_designer_id: "" as string,
+    registered_by: "",
     is_priority: false,
 };
 
-export default function BoardWriteModal({
-    open,
-    onClose,
-    onSuccess,
-    designers = [],
-}: Props) {
+export default function BoardWriteModal({ open, onClose, onSuccess }: Props) {
     const [form, setForm] = useState(INIT);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [files, setFiles] = useState<File[]>([]);
     const [submitting, setSubmitting] = useState(false);
+
+    // 등록자: 계정 이름 자동 기입
+    useEffect(() => {
+        if (!open) return;
+        const supabase = createClient();
+        supabase.auth.getUser().then(({ data: { user } }) => {
+            if (!user) return;
+            supabase
+                .from("profiles")
+                .select("name")
+                .eq("id", user.id)
+                .single()
+                .then(({ data }) => {
+                    const name =
+                        data?.name ?? user.email?.split("@")[0] ?? "";
+                    setForm((prev) => ({ ...prev, registered_by: name }));
+                });
+        });
+    }, [open]);
 
     if (!open) return null;
 
@@ -71,6 +80,19 @@ export default function BoardWriteModal({
         if (form.special_details_yn === "있음" && !form.special_details.trim())
             e.special_details = "특이사항 내용을 입력해주세요";
         return e;
+    };
+
+    const buildPostProc = () => {
+        if (form.post_processing === "귀도리")
+            return `귀도리 ${form.귀도리_size}`;
+        if (
+            BOX_TYPES.includes(form.post_processing) &&
+            form.post_processing_note.trim()
+        )
+            return `${form.post_processing} - ${form.post_processing_note.trim()}`;
+        if (form.post_processing === "기타" && form.post_processing_note.trim())
+            return `기타: ${form.post_processing_note.trim()}`;
+        return form.post_processing;
     };
 
     const handleSubmit = async () => {
@@ -103,11 +125,6 @@ export default function BoardWriteModal({
                 }
             }
 
-            const postProc =
-                form.post_processing === "기타"
-                    ? `기타: ${form.post_processing_note}`
-                    : form.post_processing;
-
             const { data: newTask, error } = await supabase
                 .from("tasks")
                 .insert({
@@ -116,18 +133,19 @@ export default function BoardWriteModal({
                     order_method: form.order_method,
                     order_method_note: form.order_method_note.trim() || null,
                     print_items: form.print_items.trim(),
-                    post_processing: postProc,
+                    post_processing: buildPostProc(),
                     file_paths: filePaths.length ? filePaths : null,
                     consult_path: form.consult_path,
-                    consult_link: form.consult_link.trim() || null,
+                    consult_link: null,
                     special_details:
                         form.special_details_yn === "있음"
                             ? form.special_details.trim()
                             : null,
-                    assigned_designer_id: form.assigned_designer_id || null,
+                    assigned_designer_id: null,
+                    registered_by: form.registered_by.trim() || null,
                     is_priority: form.is_priority,
-                    is_quick: QUICK_METHODS.includes(form.order_method),
-                    status: "대기중",
+                    is_quick: false,
+                    status: "작업중",
                 })
                 .select("id")
                 .single();
@@ -165,6 +183,10 @@ export default function BoardWriteModal({
             return n;
         });
     };
+
+    const showPpNote =
+        BOX_TYPES.includes(form.post_processing) ||
+        form.post_processing === "기타";
 
     return (
         <div
@@ -276,20 +298,9 @@ export default function BoardWriteModal({
                                             onClick={() =>
                                                 set("order_method", m)
                                             }
-                                            style={{
-                                                ...toggleBtn(
-                                                    form.order_method === m,
-                                                ),
-                                                ...(QUICK_METHODS.includes(m) &&
-                                                form.order_method === m
-                                                    ? {
-                                                          background: "#15803d",
-                                                          borderColor:
-                                                              "#15803d",
-                                                          color: "#fff",
-                                                      }
-                                                    : {}),
-                                            }}
+                                            style={toggleBtn(
+                                                form.order_method === m,
+                                            )}
                                         >
                                             {m}
                                         </button>
@@ -326,19 +337,17 @@ export default function BoardWriteModal({
                                         display: "flex",
                                         flexWrap: "wrap",
                                         gap: 5,
-                                        marginBottom:
-                                            form.post_processing === "기타"
-                                                ? 6
-                                                : 0,
+                                        marginBottom: showPpNote ? 6 : 0,
                                     }}
                                 >
                                     {POST_PROCESSINGS.map((p) => (
                                         <button
                                             key={p}
                                             type="button"
-                                            onClick={() =>
-                                                set("post_processing", p)
-                                            }
+                                            onClick={() => {
+                                                set("post_processing", p);
+                                                set("post_processing_note", "");
+                                            }}
                                             style={toggleBtn(
                                                 form.post_processing === p,
                                             )}
@@ -347,6 +356,58 @@ export default function BoardWriteModal({
                                         </button>
                                     ))}
                                 </div>
+                                {/* 귀도리 4mm/6mm 선택 */}
+                                {form.post_processing === "귀도리" && (
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            gap: 5,
+                                            marginTop: 6,
+                                        }}
+                                    >
+                                        {(["4mm", "6mm"] as const).map((s) => (
+                                            <button
+                                                key={s}
+                                                type="button"
+                                                onClick={() =>
+                                                    set("귀도리_size", s)
+                                                }
+                                                style={{
+                                                    ...toggleBtn(
+                                                        form.귀도리_size === s,
+                                                    ),
+                                                    ...(form.귀도리_size === s
+                                                        ? {
+                                                              background:
+                                                                  "#7c3aed",
+                                                              borderColor:
+                                                                  "#7c3aed",
+                                                              color: "#fff",
+                                                          }
+                                                        : {}),
+                                                }}
+                                            >
+                                                {s}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                {/* 단면박/양면박 텍스트 옵션 */}
+                                {BOX_TYPES.includes(form.post_processing) && (
+                                    <input
+                                        type="text"
+                                        value={form.post_processing_note}
+                                        onChange={(e) =>
+                                            set(
+                                                "post_processing_note",
+                                                e.target.value,
+                                            )
+                                        }
+                                        placeholder="박 상세 내용 (선택)"
+                                        style={{ ...inp(false), marginTop: 6 }}
+                                    />
+                                )}
+                                {/* 기타 텍스트 */}
                                 {form.post_processing === "기타" && (
                                     <input
                                         type="text"
@@ -390,7 +451,6 @@ export default function BoardWriteModal({
                                         display: "flex",
                                         flexWrap: "wrap",
                                         gap: 5,
-                                        marginBottom: 6,
                                     }}
                                 >
                                     {CONSULT_PATHS.map((p) => (
@@ -408,15 +468,6 @@ export default function BoardWriteModal({
                                         </button>
                                     ))}
                                 </div>
-                                <input
-                                    type="text"
-                                    value={form.consult_link}
-                                    onChange={(e) =>
-                                        set("consult_link", e.target.value)
-                                    }
-                                    placeholder="상담 링크 (선택)"
-                                    style={inp(false)}
-                                />
                             </Row>
                             <Row
                                 label="처리특이사항"
@@ -479,42 +530,16 @@ export default function BoardWriteModal({
                                     />
                                 )}
                             </Row>
-                            <Row label="처리자">
-                                {designers.length > 0 ? (
-                                    <div
-                                        style={{
-                                            display: "flex",
-                                            flexWrap: "wrap",
-                                            gap: 5,
-                                        }}
-                                    >
-                                        {designers.map((d) => (
-                                            <button
-                                                key={d.id}
-                                                type="button"
-                                                onClick={() =>
-                                                    set(
-                                                        "assigned_designer_id",
-                                                        form.assigned_designer_id ===
-                                                            d.id
-                                                            ? ""
-                                                            : d.id,
-                                                    )
-                                                }
-                                                style={toggleBtn(
-                                                    form.assigned_designer_id ===
-                                                        d.id,
-                                                )}
-                                            >
-                                                {d.name}
-                                            </button>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <span style={{ color: "#9ca3af" }}>
-                                        등록된 디자이너가 없습니다
-                                    </span>
-                                )}
+                            <Row label="등록자">
+                                <input
+                                    type="text"
+                                    value={form.registered_by}
+                                    onChange={(e) =>
+                                        set("registered_by", e.target.value)
+                                    }
+                                    placeholder="등록자 이름"
+                                    style={inp(false)}
+                                />
                             </Row>
                             <Row label="우선작업">
                                 <button

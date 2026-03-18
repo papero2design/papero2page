@@ -11,7 +11,6 @@ type DayData = {
     count: number;
     priority: number;
     normal: number;
-    simple: number;
 };
 type DesignerStat = {
     id: string;
@@ -20,7 +19,6 @@ type DesignerStat = {
     total: number;
     priority: number;
     normal: number;
-    simple: number;
 };
 
 const PRESETS = [
@@ -59,7 +57,7 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
             const { data } = await supabase
                 .from("tasks")
                 .select(
-                    "id, completed_at, assigned_designer_id, is_priority, is_quick",
+                    "id, completed_at, assigned_designer_id, is_priority",
                 )
                 .eq("status", "완료")
                 .is("deleted_at", null)
@@ -76,13 +74,11 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                 if (!r.completed_at) return;
                 const d = r.completed_at.split("T")[0];
                 if (!dayMap[d])
-                    dayMap[d] = { count: 0, priority: 0, normal: 0, simple: 0 };
+                    dayMap[d] = { count: 0, priority: 0, normal: 0 };
 
                 dayMap[d].count++;
                 if (r.is_priority) {
                     dayMap[d].priority++;
-                } else if (r.is_quick === true) {
-                    dayMap[d].simple++;
                 } else {
                     dayMap[d].normal++;
                 }
@@ -99,7 +95,6 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                     count: stat?.count ?? 0,
                     priority: stat?.priority ?? 0,
                     normal: stat?.normal ?? 0,
-                    simple: stat?.simple ?? 0,
                 });
                 cur.setDate(cur.getDate() + 1);
             }
@@ -113,7 +108,6 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                     total: 0,
                     priority: 0,
                     normal: 0,
-                    simple: 0,
                 };
             });
 
@@ -125,9 +119,6 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                 stat.total++;
                 if (r.is_priority) {
                     stat.priority++;
-                } else if (r.is_quick === true) {
-                    // DB 구조에 맞게 수정 필요 시 변경
-                    stat.simple++;
                 } else {
                     stat.normal++;
                 }
@@ -170,11 +161,10 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
     );
 
     const downloadExcel = async () => {
-        // 1. 선택된 기간에 '접수(created_at)'된 모든 데이터 가져오기
         const { data } = await supabase
             .from("tasks")
             .select(
-                "task_number, customer_name, order_source, order_method, order_method_note, print_items, post_processing, consult_path, file_paths, special_details, status, is_priority, is_quick, created_at, completed_at, deleted_at, designer:designers(name)",
+                "task_number, customer_name, order_source, order_method, order_method_note, print_items, post_processing, consult_path, file_paths, special_details, status, is_priority, created_at, completed_at, deleted_at, designer:designers(name)",
             )
             .gte("created_at", `${dateFrom}T00:00:00`)
             .lte("created_at", `${dateTo}T23:59:59`)
@@ -186,48 +176,29 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
             return;
         }
 
-        // 2. 통계 집계용 변수
-        let priority = 0,
-            quick = 0,
-            normal = 0;
-        let wait = 0,
-            ing = 0,
-            check = 0,
-            done = 0,
-            trash = 0;
+        // 통계 집계용 변수
+        let priority = 0, normal = 0;
+        let done = 0, trash = 0, active = 0;
         const sourceMap: Record<string, number> = {};
         const methodMap: Record<string, number> = {};
 
         type Row = (typeof data)[0] & { designer: { name: string } | null };
 
-        // 3. 상세 데이터 시트용 JSON 배열 생성
         const detailRows = (data as Row[]).map((r) => {
-            // 상태 집계
             const isTrash = !!r.deleted_at;
             if (isTrash) trash++;
-            else {
-                if (r.status === "대기중") wait++;
-                if (r.status === "진행중") ing++;
-                if (r.status === "검수대기") check++;
-                if (r.status === "완료") done++;
-            }
+            else if (r.status === "완료") done++;
+            else active++;
 
-            // 작업 유형 집계
             if (r.is_priority) priority++;
-            else if (r.is_quick) quick++;
             else normal++;
 
-            // 주문 경로/방법 집계
             const source = r.order_source || "미상";
             const method = r.order_method || "미상";
             sourceMap[source] = (sourceMap[source] || 0) + 1;
             methodMap[method] = (methodMap[method] || 0) + 1;
 
-            const typeStr = r.is_priority
-                ? "우선작업"
-                : r.is_quick
-                  ? "간단작업"
-                  : "일반작업";
+            const typeStr = r.is_priority ? "우선작업" : "일반작업";
             const statusStr = isTrash ? "휴지통(삭제)" : r.status;
             const methodStr = r.order_method_note
                 ? `${method} (${r.order_method_note})`
@@ -250,21 +221,17 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
             };
         });
 
-        // 4. 통계 요약 시트용 JSON 배열 생성
         const summaryRows = [
             { 구분: "조회 기간", 내용: `${dateFrom} ~ ${dateTo}` },
             { 구분: "총 접수건", 내용: `${data.length}건` },
-            { 구분: "", 내용: "" }, // 빈 줄
+            { 구분: "", 내용: "" },
             { 구분: "[상태별 현황]", 내용: "" },
-            { 구분: "대기중", 내용: `${wait}건` },
-            { 구분: "진행중(작업중)", 내용: `${ing}건` },
-            { 구분: "검수대기", 내용: `${check}건` },
+            { 구분: "작업중", 내용: `${active}건` },
             { 구분: "완료", 내용: `${done}건` },
             { 구분: "휴지통", 내용: `${trash}건` },
             { 구분: "", 내용: "" },
             { 구분: "[작업유형별 현황]", 내용: "" },
             { 구분: "우선작업", 내용: `${priority}건` },
-            { 구분: "간단작업", 내용: `${quick}건` },
             { 구분: "일반작업", 내용: `${normal}건` },
             { 구분: "", 내용: "" },
             { 구분: "[주문경로별 현황]", 내용: "" },
@@ -274,14 +241,10 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
             })),
         ];
 
-        // 5. 엑셀 워크북(Workbook) 생성 및 시트 추가
         const wb = XLSX.utils.book_new();
 
-        // 📊 [시트 1: 통계 요약]
         const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
         wsSummary["!cols"] = [{ wpx: 150 }, { wpx: 200 }];
-
-        // 요약 시트 스타일링 (가운데 정렬 및 굵게)
         const sumRange = XLSX.utils.decode_range(wsSummary["!ref"] || "A1");
         for (let R = sumRange.s.r; R <= sumRange.e.r; ++R) {
             for (let C = sumRange.s.c; C <= sumRange.e.c; ++C) {
@@ -295,43 +258,27 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
         }
         XLSX.utils.book_append_sheet(wb, wsSummary, "통계 요약");
 
-        // 📝 [시트 2: 상세 내역]
         const wsDetail = XLSX.utils.json_to_sheet(detailRows);
         wsDetail["!cols"] = [
-            { wpx: 50 },
-            { wpx: 80 },
-            { wpx: 80 },
-            { wpx: 100 },
-            { wpx: 100 },
-            { wpx: 150 },
-            { wpx: 250 },
-            { wpx: 100 },
-            { wpx: 100 },
-            { wpx: 100 },
-            { wpx: 120 },
-            { wpx: 120 },
-            { wpx: 300 },
+            { wpx: 50 }, { wpx: 80 }, { wpx: 80 }, { wpx: 100 },
+            { wpx: 100 }, { wpx: 150 }, { wpx: 250 }, { wpx: 100 },
+            { wpx: 100 }, { wpx: 100 }, { wpx: 120 }, { wpx: 120 }, { wpx: 300 },
         ];
-
-        // 상세 내역 시트 스타일링
         const detRange = XLSX.utils.decode_range(wsDetail["!ref"] || "A1");
         for (let R = detRange.s.r; R <= detRange.e.r; ++R) {
             for (let C = detRange.s.c; C <= detRange.e.c; ++C) {
                 const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
                 if (!wsDetail[cellRef]) continue;
-
-                // 첫 번째 줄(헤더)인 경우: 검정 바탕, 흰색 굵은 글씨
                 if (R === 0) {
                     wsDetail[cellRef].s = {
-                        fill: { fgColor: { rgb: "111827" } }, // 검정 배경
-                        font: { bold: true, color: { rgb: "FFFFFF" } }, // 흰색 글씨
+                        fill: { fgColor: { rgb: "111827" } },
+                        font: { bold: true, color: { rgb: "FFFFFF" } },
                         alignment: { horizontal: "center", vertical: "center" },
                     };
                 } else {
-                    // 데이터 행인 경우: 가운데 정렬 (특이사항은 왼쪽 정렬)
                     wsDetail[cellRef].s = {
                         alignment: {
-                            horizontal: C === 12 ? "left" : "center", // 12번째 컬럼(특이사항)만 왼쪽 정렬
+                            horizontal: C === 12 ? "left" : "center",
                             vertical: "center",
                         },
                     };
@@ -340,16 +287,14 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
         }
         XLSX.utils.book_append_sheet(wb, wsDetail, "상세 내역");
 
-        // 6. 파일 다운로드 트리거
         XLSX.writeFile(wb, `작업통계_${dateFrom}_${dateTo}.xlsx`);
     };
 
-    // 데이터 길이에 따른 날짜 라벨 표시 간격 결정 로직
     const shouldShowLabel = (idx: number, total: number) => {
-        if (total <= 14) return true; // 2주 이내는 전부 표시
-        if (total <= 35) return idx % 3 === 0; // 한 달 이내는 3일 간격
-        if (total <= 65) return idx % 7 === 0; // 두 달 이내는 7일 간격
-        return idx % 10 === 0; // 그 이상은 10일 간격
+        if (total <= 14) return true;
+        if (total <= 35) return idx % 3 === 0;
+        if (total <= 65) return idx % 7 === 0;
+        return idx % 10 === 0;
     };
 
     return (
@@ -410,7 +355,7 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* 일별 바차트 (가로 스크롤 제거 및 핏 조정) */}
+                    {/* 일별 바차트 */}
                     <div className="bg-white border border-gray-200 rounded-xl p-6">
                         <div className="flex items-center gap-2 mb-4">
                             <BarChart2 className="w-5 h-5 text-gray-500" />
@@ -419,16 +364,11 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                             </h3>
                         </div>
 
-                        {/* 차트 영역: w-full로 채우고 요소들을 균등 분배 */}
                         <div className="flex items-end justify-between gap-[1px] sm:gap-[2px] w-full relative pb-1 mt-4 h-65">
                             {dayData.map((d, i) => {
-                                // 퍼센트 기반으로 높이 계산 (최소 2%)
                                 const hPercent =
                                     d.count > 0
-                                        ? Math.max(
-                                              2,
-                                              (d.count / maxCount) * 100,
-                                          )
+                                        ? Math.max(2, (d.count / maxCount) * 100)
                                         : 0;
                                 const isToday = d.date === today;
                                 const intensity =
@@ -441,14 +381,12 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                                         ? { backgroundColor: "#f3f4f6" }
                                         : isToday
                                           ? { backgroundColor: "#1ED67D" }
-                                          : {
-                                                backgroundColor: `rgba(17, 24, 39, ${intensity})`,
-                                            };
+                                          : { backgroundColor: `rgba(17, 24, 39, ${intensity})` };
 
                                 return (
                                     <div
                                         key={d.date}
-                                        className="group relative flex flex-col items-center justify-end flex-1 h-full "
+                                        className="group relative flex flex-col items-center justify-end flex-1 h-full"
                                     >
                                         <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[11px] p-2.5 rounded-lg shadow-xl transition-opacity whitespace-nowrap z-50 pointer-events-none min-w-[100px]">
                                             <div className="font-bold border-b border-gray-700 pb-1.5 mb-1.5 text-center">
@@ -470,12 +408,6 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                                                         {d.normal}건
                                                     </span>
                                                 </div>
-                                                <div className="flex justify-between gap-3">
-                                                    <span>간단작업</span>{" "}
-                                                    <span className="font-medium text-white">
-                                                        {d.simple}건
-                                                    </span>
-                                                </div>
                                             </div>
                                             <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-gray-900"></div>
                                         </div>
@@ -486,8 +418,6 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                                             }}
                                             className="w-full max-w-[24px] rounded-t-[2px] transition-all duration-300"
                                         />
-
-                                        {/* 스마트 X축 라벨 */}
                                         {shouldShowLabel(i, dayData.length) && (
                                             <span
                                                 className={`absolute -bottom-5 text-[9px] whitespace-nowrap ${
@@ -496,9 +426,7 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                                                         : "text-gray-400"
                                                 }`}
                                             >
-                                                {d.date
-                                                    .slice(5)
-                                                    .replace("-", "/")}
+                                                {d.date.slice(5).replace("-", "/")}
                                             </span>
                                         )}
                                     </div>
@@ -520,12 +448,7 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                                 <button
                                     onClick={() =>
                                         setCalMonth(
-                                            (m) =>
-                                                new Date(
-                                                    m.getFullYear(),
-                                                    m.getMonth() - 1,
-                                                    1,
-                                                ),
+                                            (m) => new Date(m.getFullYear(), m.getMonth() - 1, 1),
                                         )
                                     }
                                     className="p-1 text-gray-400 hover:text-gray-900 rounded transition-colors"
@@ -539,12 +462,7 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                                 <button
                                     onClick={() =>
                                         setCalMonth(
-                                            (m) =>
-                                                new Date(
-                                                    m.getFullYear(),
-                                                    m.getMonth() + 1,
-                                                    1,
-                                                ),
+                                            (m) => new Date(m.getFullYear(), m.getMonth() + 1, 1),
                                         )
                                     }
                                     className="p-1 text-gray-400 hover:text-gray-900 rounded transition-colors"
@@ -555,16 +473,14 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                         </div>
 
                         <div className="grid grid-cols-7 gap-1">
-                            {["일", "월", "화", "수", "목", "금", "토"].map(
-                                (d) => (
-                                    <div
-                                        key={d}
-                                        className="text-center text-[11px] text-gray-400 font-medium py-1"
-                                    >
-                                        {d}
-                                    </div>
-                                ),
-                            )}
+                            {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
+                                <div
+                                    key={d}
+                                    className="text-center text-[11px] text-gray-400 font-medium py-1"
+                                >
+                                    {d}
+                                </div>
+                            ))}
                             {Array.from({ length: firstDay }).map((_, i) => (
                                 <div key={`e${i}`} />
                             ))}
@@ -574,9 +490,7 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                                 const dayStat = calDayMap[dStr];
                                 const cnt = dayStat?.count ?? 0;
                                 const intensity =
-                                    cnt > 0
-                                        ? Math.max(0.15, cnt / calMaxCount)
-                                        : 0;
+                                    cnt > 0 ? Math.max(0.15, cnt / calMaxCount) : 0;
                                 const isToday2 = dStr === today;
 
                                 return (
@@ -607,7 +521,6 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                                             {day}
                                         </span>
 
-                                        {/* 달력 툴팁 */}
                                         {cnt > 0 && dayStat && (
                                             <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[11px] p-2.5 rounded-lg shadow-xl transition-opacity whitespace-nowrap z-50 pointer-events-none min-w-[100px]">
                                                 <div className="font-bold border-b border-gray-700 pb-1.5 mb-1.5 text-center">
@@ -627,12 +540,6 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                                                         <span>일반</span>{" "}
                                                         <span className="font-medium text-[#1ED67D]">
                                                             {dayStat.normal}건
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex justify-between gap-3">
-                                                        <span>간단</span>{" "}
-                                                        <span className="font-medium text-white">
-                                                            {dayStat.simple}건
                                                         </span>
                                                     </div>
                                                 </div>
@@ -666,10 +573,6 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                                 <div className="w-2.5 h-2.5 rounded-sm bg-[#1ED67D]"></div>
                                 일반작업
                             </div>
-                            <div className="flex items-center gap-1.5">
-                                <div className="w-2.5 h-2.5 rounded-sm bg-gray-200"></div>
-                                간단작업
-                            </div>
                         </div>
                     </div>
 
@@ -693,7 +596,6 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                                     </span>
                                 </div>
 
-                                {/* 디자이너별 완료 성과 툴팁  */}
                                 <div className="flex-1 h-5 flex items-center group relative cursor-pointer">
                                     <div
                                         className="h-full flex rounded-sm overflow-hidden w-full"
@@ -717,20 +619,11 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                                                 }}
                                             />
                                         )}
-                                        {d.simple > 0 && (
-                                            <div
-                                                className="bg-gray-200 h-full transition-all"
-                                                style={{
-                                                    width: `${(d.simple / d.total) * 100}%`,
-                                                }}
-                                            />
-                                        )}
                                     </div>
                                     <span className="text-gray-900 text-sm font-semibold ml-3 w-8 shrink-0">
                                         {d.total > 0 ? `${d.total}건` : "0건"}
                                     </span>
 
-                                    {/* 디자이너별 상세 툴팁 */}
                                     {d.total > 0 && (
                                         <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/4 bg-gray-900 text-white text-[11px] p-2.5 rounded-lg shadow-xl transition-opacity whitespace-nowrap z-50 pointer-events-none min-w-[100px]">
                                             <div className="font-bold border-b border-gray-700 pb-1.5 mb-1.5 text-center">
@@ -750,12 +643,6 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                                                     <span>일반작업</span>{" "}
                                                     <span className="font-medium text-[#1ED67D]">
                                                         {d.normal}건
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between gap-3">
-                                                    <span>간단작업</span>{" "}
-                                                    <span className="font-medium text-white">
-                                                        {d.simple}건
                                                     </span>
                                                 </div>
                                             </div>

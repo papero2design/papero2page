@@ -2,19 +2,19 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getUserWithRole } from "@/lib/auth/isAdmin";
 import { TaskWithDesigner } from "@/types/database";
 import BoardTable from "../BoardTable";
 import WriteButton from "../WriteButton";
+import Pagination from "../Pagination";
 
 const TASK_SELECT =
     "id, task_number, order_source, customer_name, order_method, order_method_note, " +
     "print_items, post_processing, file_paths, " +
-    "consult_path, consult_link, special_details, " +
+    "consult_path, special_details, registered_by, " +
     "status, is_priority, is_quick, created_at, deleted_at, " +
     "designer:designers(id, name)";
 
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 15;
 
 export default async function QuickPage({
     searchParams,
@@ -62,18 +62,7 @@ export default async function QuickPage({
     const pageUrl = (p: number) => `/board/quick?page=${p}`;
 
     return (
-        <>
-            <style>{`
-                .bo-btn { display:inline-block; padding:6px 14px; font-weight:600; border:1px solid #e5e7eb; border-radius:4px; background:#fff; color:#374151; cursor:pointer; text-decoration:none; transition:background 0.1s; }
-                .bo-btn:hover { background:#f9fafb; }
-                .pg-wrap { margin-top:20px; text-align:center; }
-                .pg-wrap span { display:inline-flex; gap:4px; flex-wrap:wrap; justify-content:center; }
-                .pg-link { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:30px; padding:0 8px; border:1px solid #e5e7eb; border-radius:4px; background:#fff; color:#6b7280; text-decoration:none; transition:background 0.1s; }
-                .pg-link:hover { background:#f9fafb; }
-                .pg-link.active { background:#111827; color:#fff; border-color:#111827; font-weight:700; }
-            `}</style>
-
-            <div
+        <div
                 style={{
                     width: "100%",
                     maxWidth: 1260,
@@ -117,40 +106,11 @@ export default async function QuickPage({
                     from={from}
                     designers={designers ?? []}
                     isAdmin={isAdmin}
-                    writeButton={<WriteButton designers={designers ?? []} />}
+                    writeButton={<WriteButton />}
+                    canEditDesigner={isAdmin}
                 />
 
-                {totalPages > 1 && (
-                    <nav className="pg-wrap">
-                        <span>
-                            {page > 1 && (
-                                <Link href={pageUrl(1)} className="pg-link">
-                                    맨처음
-                                </Link>
-                            )}
-                            {Array.from({ length: totalPages }, (_, i) => i + 1)
-                                .filter((p) => Math.abs(p - page) <= 4)
-                                .map((p) => (
-                                    <Link
-                                        key={p}
-                                        href={pageUrl(p)}
-                                        className={`pg-link${p === page ? " active" : ""}`}
-                                    >
-                                        {p}
-                                    </Link>
-                                ))}
-                            {page < totalPages && (
-                                <Link
-                                    href={pageUrl(totalPages)}
-                                    className="pg-link"
-                                >
-                                    맨끝
-                                </Link>
-                            )}
-                        </span>
-                    </nav>
-                )}
+                <Pagination page={page} totalPages={totalPages} pageUrl={pageUrl} />
             </div>
-        </>
     );
 }

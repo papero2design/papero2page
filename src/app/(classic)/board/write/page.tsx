@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { uploadToR2 } from "@/lib/r2/upload";
 import FileUploadField from "../FileUploadField";
+import { useToast } from "../Toast";
 
 // ─── BoardWriteModal과 완전히 동일한 상수 ────────────────────
 const ORDER_SOURCES = ["홈페이지", "스토어팜"];
@@ -45,6 +46,7 @@ export default function BoardWritePage() {
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [files, setFiles] = useState<File[]>([]);
     const [loading, setLoading] = useState(false);
+    const { showToast, ToastUI } = useToast();
     const supabase = createClient();
 
     const set = (k: keyof typeof INIT, v: unknown) => {
@@ -139,7 +141,7 @@ export default function BoardWritePage() {
             router.push("/board");
         } catch (err) {
             console.error(err);
-            alert("등록 중 오류가 발생했습니다.");
+            showToast("등록 중 오류가 발생했습니다.");
         } finally {
             setLoading(false);
         }
@@ -147,6 +149,7 @@ export default function BoardWritePage() {
 
     return (
         <div style={{ fontFamily: "inherit" }}>
+            {ToastUI}
             {/* 헤더 — BoardWriteModal 스타일 */}
             <div
                 style={{

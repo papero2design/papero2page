@@ -1,34 +1,36 @@
 // src/app/(classic)/board/done/page.tsx
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import DoneClient from "./DoneClient";
+import { TaskWithDesigner } from "@/types/database";
+import BoardTable from "../BoardTable";
 import Pagination from "../Pagination";
+import FilterBar from "../FilterBar";
 
-const DONE_SELECT =
-    "id, task_number, customer_name, order_source, order_method, " +
-    "print_items, post_processing, completed_at, created_at, " +
+const TASK_SELECT =
+    "id, task_number, order_source, customer_name, order_method, order_method_note, " +
+    "print_items, post_processing, file_paths, " +
+    "consult_path, consult_link, special_details, registered_by, " +
+    "status, is_priority, is_quick, created_at, deleted_at, " +
     "designer:designers(id, name)";
 
 const PAGE_SIZE = 15;
 
-type DoneTask = {
-    id: string;
-    task_number: number | null;
-    customer_name: string;
-    order_source: string;
-    order_method: string;
-    print_items: string;
-    post_processing: string | null;
-    completed_at: string | null;
-    created_at: string;
-    designer: { id: string; name: string } | null;
-};
-
 export default async function DonePage({
     searchParams,
 }: {
-    searchParams: Promise<{ page?: string; q?: string }>;
+    searchParams: Promise<{
+        page?: string;
+        q?: string;
+        method?: string;
+        source?: string;
+        print?: string;
+        post?: string;
+        consult?: string;
+        dateFrom?: string;
+        dateTo?: string;
+        sortBy?: string;
+        sortDir?: string;
+    }>;
 }) {
     const supabase = await createClient();
     const {
@@ -36,169 +38,129 @@ export default async function DonePage({
     } = await supabase.auth.getUser();
     if (!user) redirect("/login");
 
-    const { page: pageParam, q } = await searchParams;
+    const { data: profileData } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+    const isAdmin = profileData?.role === "admin";
+    const isDesigner = profileData?.role === "designer";
+
+    const {
+        page: pageParam,
+        q,
+        method: fMethod,
+        source: fSource,
+        print: fPrint,
+        post: fPost,
+        consult: fConsult,
+        dateFrom: fDateFrom,
+        dateTo: fDateTo,
+        sortBy: fSortBy,
+        sortDir: fSortDir,
+    } = await searchParams;
+
     const page = Math.max(1, Number(pageParam ?? 1));
     const from = (page - 1) * PAGE_SIZE;
+    const sortBy = fSortBy ?? "completed_at";
+    const sortAsc = fSortDir === "asc";
 
     let query = supabase
         .from("tasks")
-        .select(DONE_SELECT, { count: "exact" })
+        .select(TASK_SELECT, { count: "exact" })
         .is("deleted_at", null)
         .eq("status", "완료")
-        .order("completed_at", { ascending: false })
+        .order(sortBy, { ascending: sortAsc })
         .range(from, from + PAGE_SIZE - 1);
 
     if (q?.trim()) query = query.ilike("customer_name", `%${q.trim()}%`);
+    if (fMethod) query = query.eq("order_method", fMethod);
+    if (fSource) query = query.eq("order_source", fSource);
+    if (fPrint?.trim()) query = query.ilike("print_items", `%${fPrint.trim()}%`);
+    if (fPost) query = query.ilike("post_processing", `${fPost}%`);
+    if (fConsult) query = query.eq("consult_path", fConsult);
+    if (fDateFrom) query = query.gte("created_at", `${fDateFrom}T00:00:00`);
+    if (fDateTo) query = query.lte("created_at", `${fDateTo}T23:59:59`);
 
     const { data, count, error } = await query;
     if (error?.code === "PGRST103") redirect("/board/done");
 
-    const tasks = (data ?? []) as unknown as DoneTask[];
+    const tasks = (data ?? []) as unknown as TaskWithDesigner[];
     const total = count ?? 0;
     const totalPages = Math.ceil(total / PAGE_SIZE);
 
-    const pageUrl = (p: number) =>
-        `/board/done?page=${p}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
+    const { data: designers } = await supabase
+        .from("designers")
+        .select("id, name")
+        .eq("is_active", true)
+        .order("name");
+
+    const pageUrl = (p: number) => {
+        const params = new URLSearchParams();
+        params.set("page", String(p));
+        if (q) params.set("q", q);
+        if (fMethod) params.set("method", fMethod);
+        if (fSource) params.set("source", fSource);
+        if (fPrint) params.set("print", fPrint);
+        if (fPost) params.set("post", fPost);
+        if (fConsult) params.set("consult", fConsult);
+        if (fDateFrom) params.set("dateFrom", fDateFrom);
+        if (fDateTo) params.set("dateTo", fDateTo);
+        if (fSortBy) params.set("sortBy", fSortBy);
+        if (fSortDir) params.set("sortDir", fSortDir);
+        return `/board/done?${params.toString()}`;
+    };
 
     return (
         <div
+            style={{
+                width: "100%",
+                maxWidth: 1260,
+                margin: "0 auto",
+                padding: "0 16px 40px",
+            }}
+        >
+            <div
                 style={{
-                    width: "100%",
-                    maxWidth: 1260,
-                    margin: "0 auto",
-                    padding: "0 16px 40px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    paddingTop: 16,
+                    marginBottom: 4,
                 }}
             >
-                {/* 헤더 */}
-                <div
-                    style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginBottom: 16,
-                        paddingTop: 16,
-                    }}
-                >
-                    <div
-                        style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                        }}
-                    >
-                        <span
-                            style={{
-                                padding: "2px 8px",
-                                background: "#f0fdf4",
-                                border: "1px solid #bbf7d0",
-                                borderRadius: 6,
-                                color: "#15803d",
-                                fontWeight: 700,
-                            }}
-                        >
-                            완료
+                <p style={{ color: "#9ca3af", margin: 0 }}>
+                    총 <strong style={{ color: "#111827" }}>{total}</strong>건
+                    {q && (
+                        <span style={{ marginLeft: 8, color: "#6b7280" }}>
+                            &quot;{q}&quot; 검색결과
                         </span>
-                        <p style={{ color: "#9ca3af", margin: 0 }}>
-                            총{" "}
-                            <strong style={{ color: "#111827" }}>
-                                {total}
-                            </strong>
-                            건
-                            {q && (
-                                <span
-                                    style={{ marginLeft: 8, color: "#6b7280" }}
-                                >
-                                    &quot;{q}&quot; 검색결과
-                                    <Link
-                                        href="/board/done"
-                                        style={{
-                                            marginLeft: 6,
-                                            color: "#ef4444",
-                                            textDecoration: "none",
-                                        }}
-                                    >
-                                        ✕
-                                    </Link>
-                                </span>
-                            )}
-                        </p>
-                    </div>
-                    {/* 검색 */}
-                    <form
-                        action="/board/done"
-                        method="GET"
-                        style={{ display: "flex", gap: 6 }}
-                    >
-                        <input
-                            type="text"
-                            name="q"
-                            defaultValue={q ?? ""}
-                            placeholder="고객이름 검색"
-                            style={{
-                                padding: "5px 10px",
-                                border: "1px solid #e5e7eb",
-                                borderRadius: 6,
-                                outline: "none",
-                                width: 160,
-                            }}
-                        />
-                        <button
-                            type="submit"
-                            style={{
-                                padding: "5px 12px",
-                                background: "#111827",
-                                color: "#fff",
-                                border: "none",
-                                borderRadius: 6,
-                                cursor: "pointer",
-                                fontWeight: 600,
-                            }}
-                        >
-                            검색
-                        </button>
-                    </form>
-                </div>
-
-                {/* 테이블 — tbody만 Client Component로 분리 */}
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead>
-                        <tr
-                            style={{
-                                borderTop: "2px solid #111827",
-                                borderBottom: "1px solid #e5e7eb",
-                                background: "#f9fafb",
-                            }}
-                        >
-                            {[
-                                "번호",
-                                "고객이름",
-                                "주문방법",
-                                "인쇄항목",
-                                "담당 디자이너",
-                                "완료일시",
-                            ].map((h) => (
-                                <th
-                                    key={h}
-                                    style={{
-                                        padding: "10px 12px",
-                                        fontWeight: 700,
-                                        color: "#6b7280",
-                                        textAlign: "left",
-                                        whiteSpace: "nowrap",
-                                    }}
-                                >
-                                    {h}
-                                </th>
-                            ))}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {/* 클릭 → 모달 처리는 Client Component에서 */}
-                        <DoneClient tasks={tasks} />
-                    </tbody>
-                </table>
-
-                <Pagination page={page} totalPages={totalPages} pageUrl={pageUrl} />
+                    )}
+                </p>
             </div>
+
+            <FilterBar
+                currentStatus=""
+                currentMethod={fMethod ?? ""}
+                currentSource={fSource ?? ""}
+                currentPrint={fPrint ?? ""}
+                currentPost={fPost ?? ""}
+                currentConsult={fConsult ?? ""}
+                currentDateFrom={fDateFrom ?? ""}
+                currentDateTo={fDateTo ?? ""}
+                currentSortBy={fSortBy ?? ""}
+                currentSortDir={fSortDir ?? "desc"}
+            />
+
+            <BoardTable
+                tasks={tasks}
+                total={total}
+                from={from}
+                designers={designers ?? []}
+                canEditDesigner={isAdmin || isDesigner}
+            />
+
+            <Pagination page={page} totalPages={totalPages} pageUrl={pageUrl} />
+        </div>
     );
 }

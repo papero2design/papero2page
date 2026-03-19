@@ -1,8 +1,6 @@
 // src/app/(classic)/board/trash/page.tsx
 import { redirect } from "next/navigation";
-import { getUserWithRole } from "@/lib/auth/isAdmin";
-import TrashClient, { type TrashTask } from "./TrashClient";
-import Link from "next/link";
+import TrashClient from "./TrashClient";
 import Pagination from "../Pagination";
 import { createClient } from "@/lib/supabase/server";
 import { TaskWithDesigner } from "@/types/database";
@@ -14,9 +12,17 @@ export default async function TrashPage({
 }: {
     searchParams: Promise<{ page?: string }>;
 }) {
-    const { user, isAdmin } = await getUserWithRole();
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
     if (!user) redirect("/login");
-    if (!isAdmin) redirect("/board");
+
+    const { data: profileData } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+    const role = profileData?.role;
+    if (role !== "admin" && role !== "designer") redirect("/board");
 
     // 1. 페이지 계산
     const { page: pageParam } = await searchParams;
@@ -24,11 +30,14 @@ export default async function TrashPage({
     const from = (page - 1) * PAGE_SIZE;
 
     // 2. 15개씩 잘라서 가져오기
-    const supabase = await createClient();
     const { data, count, error } = await supabase
         .from("tasks")
         .select(
-            "id, task_number, customer_name, order_source, order_method, print_items, status, is_priority, created_at, deleted_at, designer:designers(id, name)",
+            "id, task_number, order_source, customer_name, order_method, order_method_note, " +
+            "print_items, post_processing, file_paths, " +
+            "consult_path, consult_link, special_details, registered_by, " +
+            "status, is_priority, is_quick, created_at, deleted_at, " +
+            "designer:designers(id, name)",
             { count: "exact" },
         )
         .not("deleted_at", "is", null)
@@ -38,13 +47,7 @@ export default async function TrashPage({
     // 범위를 벗어난 페이지 접근 시 1페이지로 리다이렉트
     if (error?.code === "PGRST103") redirect("/board/trash");
 
-    // 1. 데이터를 가져온 후, TrashClient가 원하는 형식(TrashTask)으로 강제 변환합니다.
-    const tasks: TrashTask[] = (data ?? []).map((t) => ({
-        ...t,
-        deleted_at: t.deleted_at || "", // null 방지 로직
-        // designer 데이터가 DB 구조상 배열로 올 수도 있으니 안전하게 처리
-        designer: (t.designer as any) || null,
-    }));
+    const tasks = (data ?? []) as unknown as TaskWithDesigner[];
 
     const total = count ?? 0;
     const totalPages = Math.ceil(total / PAGE_SIZE);

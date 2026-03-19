@@ -193,6 +193,7 @@ export default function FileUploadField({
             {/* 파일 선택 버튼 */}
             <label
                 style={{
+                    position: "relative",
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 6,
@@ -206,7 +207,6 @@ export default function FileUploadField({
                     width: "fit-content",
                 }}
             >
-                <span>📎</span>
                 <span>
                     {existingFiles !== undefined
                         ? "+ 파일 추가"
@@ -218,10 +218,11 @@ export default function FileUploadField({
                     multiple
                     style={{
                         position: "absolute",
+                        inset: 0,
                         opacity: 0,
-                        width: 0,
-                        height: 0,
-                        pointerEvents: "none",
+                        width: "100%",
+                        height: "100%",
+                        cursor: "pointer",
                     }}
                     onChange={handleChange}
                 />

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import FileUploadField, { uploadToR2 } from "./FileUploadField";
+import { useToast } from "./Toast";
 
 interface Props {
     open: boolean;
@@ -24,7 +25,13 @@ const ORDER_METHODS = [
 const POST_PROCESSINGS = ["없음", "단면박", "양면박", "귀도리", "기타"];
 const BOX_TYPES = ["단면박", "양면박"];
 const FILE_PATHS = ["게시판", "메일", "없음"];
-const CONSULT_PATHS = ["네이버톡톡", "카카오톡채널", "메일", "없음"];
+function deriveConsultPath(url: string): string {
+    if (!url.trim()) return "없음";
+    const lower = url.toLowerCase();
+    if (lower.includes("naver")) return "네이버";
+    if (lower.includes("kakao")) return "카카오";
+    return "기타";
+}
 
 const INIT = {
     order_source: "스토어팜" as string,
@@ -36,7 +43,7 @@ const INIT = {
     귀도리_size: "4mm" as "4mm" | "6mm",
     post_processing_note: "",
     file_path: "없음" as string,
-    consult_path: "없음" as string,
+    consult_link: "",
     special_details_yn: "없음" as "있음" | "없음",
     special_details: "",
     registered_by: "",
@@ -48,6 +55,7 @@ export default function BoardWriteModal({ open, onClose, onSuccess }: Props) {
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [files, setFiles] = useState<File[]>([]);
     const [submitting, setSubmitting] = useState(false);
+    const { showToast, ToastUI } = useToast();
 
     // 등록자: 계정 이름 자동 기입
     useEffect(() => {
@@ -121,7 +129,9 @@ export default function BoardWriteModal({ open, onClose, onSuccess }: Props) {
                         size: file.size,
                     });
                 } catch (upErr) {
-                    console.error("파일 업로드 실패:", file.name, upErr);
+                    showToast(`파일 업로드 실패: ${file.name}\n${(upErr as Error).message}`);
+                    setSubmitting(false);
+                    return;
                 }
             }
 
@@ -135,8 +145,8 @@ export default function BoardWriteModal({ open, onClose, onSuccess }: Props) {
                     print_items: form.print_items.trim(),
                     post_processing: buildPostProc(),
                     file_paths: filePaths.length ? filePaths : null,
-                    consult_path: form.consult_path,
-                    consult_link: null,
+                    consult_path: deriveConsultPath(form.consult_link),
+                    consult_link: form.consult_link || null,
                     special_details:
                         form.special_details_yn === "있음"
                             ? form.special_details.trim()
@@ -153,14 +163,17 @@ export default function BoardWriteModal({ open, onClose, onSuccess }: Props) {
             if (error) throw error;
 
             if (newTask && uploadedFiles.length > 0) {
-                await supabase.from("task_files").insert(
-                    uploadedFiles.map((f) => ({
-                        task_id: newTask.id,
-                        file_url: f.url,
-                        file_name: f.name,
-                        file_size: f.size,
-                    })),
-                );
+                const { error: filesErr } = await supabase
+                    .from("task_files")
+                    .insert(
+                        uploadedFiles.map((f) => ({
+                            task_id: newTask.id,
+                            file_url: f.url,
+                            file_name: f.name,
+                            file_size: f.size,
+                        })),
+                    );
+                if (filesErr) throw new Error(`파일 DB 저장 실패: ${filesErr.message}`);
             }
 
             setForm(INIT);
@@ -169,7 +182,7 @@ export default function BoardWriteModal({ open, onClose, onSuccess }: Props) {
             onSuccess();
             onClose();
         } catch (err) {
-            alert("등록 실패: " + (err as Error).message);
+            showToast("등록 실패: " + (err as Error).message);
         } finally {
             setSubmitting(false);
         }
@@ -189,6 +202,8 @@ export default function BoardWriteModal({ open, onClose, onSuccess }: Props) {
         form.post_processing === "기타";
 
     return (
+        <>
+        {ToastUI}
         <div
             style={{
                 position: "fixed",
@@ -445,29 +460,16 @@ export default function BoardWriteModal({ open, onClose, onSuccess }: Props) {
                                     onChange={setFiles}
                                 />
                             </Row>
-                            <Row label="상담경로">
-                                <div
-                                    style={{
-                                        display: "flex",
-                                        flexWrap: "wrap",
-                                        gap: 5,
-                                    }}
-                                >
-                                    {CONSULT_PATHS.map((p) => (
-                                        <button
-                                            key={p}
-                                            type="button"
-                                            onClick={() =>
-                                                set("consult_path", p)
-                                            }
-                                            style={toggleBtn(
-                                                form.consult_path === p,
-                                            )}
-                                        >
-                                            {p}
-                                        </button>
-                                    ))}
-                                </div>
+                            <Row label="상담링크">
+                                <input
+                                    type="url"
+                                    value={form.consult_link}
+                                    onChange={(e) =>
+                                        set("consult_link", e.target.value)
+                                    }
+                                    placeholder="https://..."
+                                    style={inp(false)}
+                                />
                             </Row>
                             <Row
                                 label="처리특이사항"
@@ -559,7 +561,7 @@ export default function BoardWriteModal({ open, onClose, onSuccess }: Props) {
                                     }}
                                 >
                                     {form.is_priority
-                                        ? "🚨 우선작업으로 등록됩니다"
+                                        ? "우선작업으로 등록됩니다"
                                         : "우선작업 아님"}
                                 </button>
                             </Row>
@@ -598,6 +600,7 @@ export default function BoardWriteModal({ open, onClose, onSuccess }: Props) {
                 </div>
             </div>
         </div>
+        </>
     );
 }
 

@@ -11,7 +11,8 @@ interface Designer {
 
 interface Props {
     designers: Designer[];
-    isAdmin: boolean;
+    isAdmin: boolean;      // 통계 탭 표시 여부 (admin 전용)
+    canManage: boolean;    // 디자이너탭/관리/휴지통 표시 여부 (admin + designer)
     priorityCount?: number;
     activeCount?: number;
     doneCount?: number;
@@ -45,6 +46,7 @@ function Badge({ count, bg }: { count: number; bg: string }) {
 export default function BoardNav({
     designers,
     isAdmin,
+    canManage,
     priorityCount = 0,
     activeCount = 0,
     doneCount = 0,
@@ -98,14 +100,14 @@ export default function BoardNav({
                 </li>
 
                 {/* 구분선 */}
-                {isAdmin && (
+                {canManage && (
                     <li className="flex items-center flex-shrink-0">
                         <div className="w-px h-4 bg-gray-300 mx-2" />
                     </li>
                 )}
 
-                {/* 디자이너 목록 (관리자만) — 미배정 맨 앞 */}
-                {isAdmin && (
+                {/* 디자이너 목록 */}
+                {canManage && (
                     <li
                         className="flex items-center min-w-0 flex-shrink"
                         style={{
@@ -163,34 +165,38 @@ export default function BoardNav({
                     </Link>
                 </li>
 
-                {/* 관리자 전용 (우측 끝) */}
-                {isAdmin && (
+                {/* 우측 끝 */}
+                {canManage && (
                     <>
                         <li className="flex-1" />
-                        <li className="flex-shrink-0">
-                            <Link
-                                href="/board/stats"
-                                className={tabCls(
-                                    "/board/stats",
-                                    "text-gray-900",
-                                    "hover:text-gray-800",
-                                )}
-                            >
-                                작업통계
-                            </Link>
-                        </li>
-                        <li className="flex-shrink-0">
-                            <Link
-                                href="/board/designers"
-                                className={tabCls(
-                                    "/board/designers",
-                                    "text-gray-900",
-                                    "hover:text-gray-800",
-                                )}
-                            >
-                                디자이너 관리
-                            </Link>
-                        </li>
+                        {isAdmin && (
+                            <>
+                                <li className="flex-shrink-0">
+                                    <Link
+                                        href="/board/stats"
+                                        className={tabCls(
+                                            "/board/stats",
+                                            "text-gray-900",
+                                            "hover:text-gray-800",
+                                        )}
+                                    >
+                                        작업통계
+                                    </Link>
+                                </li>
+                                <li className="flex-shrink-0">
+                                    <Link
+                                        href="/board/designers"
+                                        className={tabCls(
+                                            "/board/designers",
+                                            "text-gray-900",
+                                            "hover:text-gray-800",
+                                        )}
+                                    >
+                                        디자이너 관리
+                                    </Link>
+                                </li>
+                            </>
+                        )}
                         <li className="flex-shrink-0">
                             <Link
                                 href="/board/trash"
@@ -199,7 +205,7 @@ export default function BoardNav({
                                     "text-red-700",
                                     "hover:text-red-500",
                                 )}
-                                title="휴지통 (관리자 전용)"
+                                title="휴지통"
                             >
                                 🗑
                             </Link>

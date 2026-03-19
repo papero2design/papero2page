@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Download, CalendarDays, BarChart2, Users } from "lucide-react";
+import { useToast } from "../Toast";
 import * as XLSX from "xlsx-js-style"; // 엑셀 파일용 라이브러리
 
 type Designer = { id: string; name: string; avatar_url: string | null };
@@ -48,6 +49,7 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
     const [designerStats, setDesignerStats] = useState<DesignerStat[]>([]);
     const [totalDone, setTotalDone] = useState(0);
     const [loading, setLoading] = useState(false);
+    const { showToast, ToastUI } = useToast();
 
     const supabase = createClient();
 
@@ -172,7 +174,7 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
             .limit(10000);
 
         if (!data?.length) {
-            alert("다운로드할 데이터가 없습니다.");
+            showToast("다운로드할 데이터가 없습니다.", "info");
             return;
         }
 
@@ -299,6 +301,7 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
 
     return (
         <div className="space-y-6">
+            {ToastUI}
             {/* 컨트롤 패널 */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex flex-wrap items-center gap-4">

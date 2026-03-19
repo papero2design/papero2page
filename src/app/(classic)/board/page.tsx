@@ -28,6 +28,7 @@ export default async function BoardPage({
         source?: string;
         print?: string;
         post?: string;
+        consult?: string;
         dateFrom?: string;
         dateTo?: string;
         sortBy?: string;
@@ -48,15 +49,6 @@ export default async function BoardPage({
     const isAdmin = profileData?.role === "admin";
     const isDesigner = profileData?.role === "designer";
 
-    if (isDesigner) {
-        const { data: myDesigner } = await supabase
-            .from("designers")
-            .select("id")
-            .eq("user_id", user.id)
-            .single();
-        if (myDesigner) redirect(`/board/designers/${myDesigner.id}`);
-    }
-
     const {
         page: pageParam,
         q,
@@ -65,6 +57,7 @@ export default async function BoardPage({
         source: fSource,
         print: fPrint,
         post: fPost,
+        consult: fConsult,
         dateFrom: fDateFrom,
         dateTo: fDateTo,
         sortBy: fSortBy,
@@ -93,6 +86,7 @@ export default async function BoardPage({
     if (fPrint?.trim())
         query = query.ilike("print_items", `%${fPrint.trim()}%`);
     if (fPost) query = query.ilike("post_processing", `${fPost}%`);
+    if (fConsult) query = query.eq("consult_path", fConsult);
     if (fDateFrom) query = query.gte("created_at", `${fDateFrom}T00:00:00`);
     if (fDateTo) query = query.lte("created_at", `${fDateTo}T23:59:59`);
 
@@ -119,6 +113,7 @@ export default async function BoardPage({
         if (fSource) params.set("source", fSource);
         if (fPrint) params.set("print", fPrint);
         if (fPost) params.set("post", fPost);
+        if (fConsult) params.set("consult", fConsult);
         if (fDateFrom) params.set("dateFrom", fDateFrom);
         if (fDateTo) params.set("dateTo", fDateTo);
         if (fSortBy) params.set("sortBy", fSortBy);
@@ -128,66 +123,65 @@ export default async function BoardPage({
 
     return (
         <div
+            style={{
+                width: "100%",
+                maxWidth: 1260,
+                margin: "0 auto",
+                padding: "0 16px 40px",
+            }}
+        >
+            <div
                 style={{
-                    width: "100%",
-                    maxWidth: 1260,
-                    margin: "0 auto",
-                    padding: "0 16px 40px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    paddingTop: 16,
+                    marginBottom: 4,
                 }}
             >
-                <div
-                    style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        paddingTop: 16,
-                        marginBottom: 4,
-                    }}
-                >
-                    <p style={{ color: "#9ca3af", margin: 0 }}>
-                        총 <strong style={{ color: "#111827" }}>{total}</strong>
-                        건
-                        {q && (
-                            <span style={{ marginLeft: 8, color: "#6b7280" }}>
-                                &quot;{q}&quot; 검색결과
-                                <Link
-                                    href="/board"
-                                    style={{
-                                        marginLeft: 6,
-                                        color: "#ef4444",
-                                        textDecoration: "none",
-                                    }}
-                                >
-                                    ✕
-                                </Link>
-                            </span>
-                        )}
-                    </p>
-                </div>
-
-                <FilterBar
-                    currentStatus={fStatus ?? ""}
-                    currentMethod={fMethod ?? ""}
-                    currentSource={fSource ?? ""}
-                    currentPrint={fPrint ?? ""}
-                    currentPost={fPost ?? ""}
-                    currentDateFrom={fDateFrom ?? ""}
-                    currentDateTo={fDateTo ?? ""}
-                    currentSortBy={fSortBy ?? ""}
-                    currentSortDir={fSortDir ?? "desc"}
-                />
-
-                <BoardTable
-                    tasks={tasks}
-                    total={total}
-                    from={from}
-                    designers={designers ?? []}
-                    isAdmin={isAdmin}
-                    canEditDesigner={isAdmin}
-                    writeButton={<WriteButton />}
-                />
-
-                <Pagination page={page} totalPages={totalPages} pageUrl={pageUrl} />
+                <p style={{ color: "#9ca3af", margin: 0 }}>
+                    총 <strong style={{ color: "#111827" }}>{total}</strong>건
+                    {q && (
+                        <span style={{ marginLeft: 8, color: "#6b7280" }}>
+                            &quot;{q}&quot; 검색결과
+                            <Link
+                                href="/board"
+                                style={{
+                                    marginLeft: 6,
+                                    color: "#ef4444",
+                                    textDecoration: "none",
+                                }}
+                            >
+                                ✕
+                            </Link>
+                        </span>
+                    )}
+                </p>
             </div>
+
+            <FilterBar
+                currentStatus={fStatus ?? ""}
+                currentMethod={fMethod ?? ""}
+                currentSource={fSource ?? ""}
+                currentPrint={fPrint ?? ""}
+                currentPost={fPost ?? ""}
+                currentConsult={fConsult ?? ""}
+                currentDateFrom={fDateFrom ?? ""}
+                currentDateTo={fDateTo ?? ""}
+                currentSortBy={fSortBy ?? ""}
+                currentSortDir={fSortDir ?? "desc"}
+            />
+
+            <BoardTable
+                tasks={tasks}
+                total={total}
+                from={from}
+                designers={designers ?? []}
+                canEditDesigner={isAdmin || isDesigner}
+                writeButton={<WriteButton />}
+            />
+
+            <Pagination page={page} totalPages={totalPages} pageUrl={pageUrl} />
+        </div>
     );
 }

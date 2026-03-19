@@ -6,7 +6,7 @@
 // 그 다음 TASK_SELECT 문자열도 수정
 // ─────────────────────────────────────────────────────────────
 
-export type DesignerStatus = "여유" | "작업중" | "바쁨";
+export type DesignerStatus = "연차" | "반차" | "외출" | "작업중" | "바쁨";
 export type TaskStatus = "작업중" | "완료";
 
 // ── designers 테이블 ──────────────────────────────────────────

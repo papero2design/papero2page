@@ -1,16 +1,16 @@
 // src/app/(classic)/board/quick/page.tsx
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { TaskWithDesigner } from "@/types/database";
 import BoardTable from "../BoardTable";
 import WriteButton from "../WriteButton";
 import Pagination from "../Pagination";
+import FilterBar from "../FilterBar";
 
 const TASK_SELECT =
     "id, task_number, order_source, customer_name, order_method, order_method_note, " +
     "print_items, post_processing, file_paths, " +
-    "consult_path, special_details, registered_by, " +
+    "consult_path, consult_link, special_details, registered_by, " +
     "status, is_priority, is_quick, created_at, deleted_at, " +
     "designer:designers(id, name)";
 
@@ -19,7 +19,19 @@ const PAGE_SIZE = 15;
 export default async function QuickPage({
     searchParams,
 }: {
-    searchParams: Promise<{ page?: string }>;
+    searchParams: Promise<{
+        page?: string;
+        q?: string;
+        method?: string;
+        source?: string;
+        print?: string;
+        post?: string;
+        consult?: string;
+        dateFrom?: string;
+        dateTo?: string;
+        sortBy?: string;
+        sortDir?: string;
+    }>;
 }) {
     const supabase = await createClient();
     const {
@@ -33,20 +45,47 @@ export default async function QuickPage({
         .eq("id", user.id)
         .single();
     const isAdmin = profileData?.role === "admin";
+    const isDesigner = profileData?.role === "designer";
 
-    const { page: pageParam } = await searchParams;
+    const {
+        page: pageParam,
+        q,
+        method: fMethod,
+        source: fSource,
+        print: fPrint,
+        post: fPost,
+        consult: fConsult,
+        dateFrom: fDateFrom,
+        dateTo: fDateTo,
+        sortBy: fSortBy,
+        sortDir: fSortDir,
+    } = await searchParams;
+
     const page = Math.max(1, Number(pageParam ?? 1));
     const from = (page - 1) * PAGE_SIZE;
+    const sortBy = fSortBy ?? "created_at";
+    const sortAsc = fSortDir === "asc";
 
-    const { data, count, error } = await supabase
+    let query = supabase
         .from("tasks")
         .select(TASK_SELECT, { count: "exact" })
         .is("deleted_at", null)
         .neq("status", "완료")
         .eq("is_priority", true)
-        .order("created_at", { ascending: false })
+        .is("assigned_designer_id", null)
+        .order(sortBy, { ascending: sortAsc })
         .range(from, from + PAGE_SIZE - 1);
 
+    if (q?.trim()) query = query.ilike("customer_name", `%${q.trim()}%`);
+    if (fMethod) query = query.eq("order_method", fMethod);
+    if (fSource) query = query.eq("order_source", fSource);
+    if (fPrint?.trim()) query = query.ilike("print_items", `%${fPrint.trim()}%`);
+    if (fPost) query = query.ilike("post_processing", `${fPost}%`);
+    if (fConsult) query = query.eq("consult_path", fConsult);
+    if (fDateFrom) query = query.gte("created_at", `${fDateFrom}T00:00:00`);
+    if (fDateTo) query = query.lte("created_at", `${fDateTo}T23:59:59`);
+
+    const { data, count, error } = await query;
     if (error?.code === "PGRST103") redirect("/board/quick");
 
     const tasks = (data ?? []) as unknown as TaskWithDesigner[];
@@ -59,58 +98,88 @@ export default async function QuickPage({
         .eq("is_active", true)
         .order("created_at");
 
-    const pageUrl = (p: number) => `/board/quick?page=${p}`;
+    const pageUrl = (p: number) => {
+        const params = new URLSearchParams();
+        params.set("page", String(p));
+        if (q) params.set("q", q);
+        if (fMethod) params.set("method", fMethod);
+        if (fSource) params.set("source", fSource);
+        if (fPrint) params.set("print", fPrint);
+        if (fPost) params.set("post", fPost);
+        if (fConsult) params.set("consult", fConsult);
+        if (fDateFrom) params.set("dateFrom", fDateFrom);
+        if (fDateTo) params.set("dateTo", fDateTo);
+        if (fSortBy) params.set("sortBy", fSortBy);
+        if (fSortDir) params.set("sortDir", fSortDir);
+        return `/board/quick?${params.toString()}`;
+    };
 
     return (
         <div
+            style={{
+                width: "100%",
+                maxWidth: 1260,
+                margin: "0 auto",
+                padding: "0 16px 40px",
+            }}
+        >
+            <div
                 style={{
-                    width: "100%",
-                    maxWidth: 1260,
-                    margin: "0 auto",
-                    padding: "0 16px 40px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    paddingTop: 16,
+                    marginBottom: 4,
                 }}
             >
-                <div
+                <span
                     style={{
-                        display: "flex",
+                        display: "inline-flex",
                         alignItems: "center",
-                        gap: 8,
-                        marginBottom: 12,
-                        paddingTop: 16,
+                        gap: 4,
+                        padding: "2px 8px",
+                        background: "#fef2f2",
+                        border: "1px solid #fecaca",
+                        borderRadius: 6,
+                        color: "#dc2626",
+                        fontWeight: 700,
                     }}
                 >
-                    <span
-                        style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 4,
-                            padding: "2px 8px",
-                            background: "#fef2f2",
-                            border: "1px solid #fecaca",
-                            borderRadius: 6,
-                            color: "#dc2626",
-                            fontWeight: 700,
-                        }}
-                    >
-                        🚨 우선작업
-                    </span>
-                    <p style={{ color: "#9ca3af", margin: 0 }}>
-                        총 <strong style={{ color: "#dc2626" }}>{total}</strong>
-                        건
-                    </p>
-                </div>
-
-                <BoardTable
-                    tasks={tasks}
-                    total={total}
-                    from={from}
-                    designers={designers ?? []}
-                    isAdmin={isAdmin}
-                    writeButton={<WriteButton />}
-                    canEditDesigner={isAdmin}
-                />
-
-                <Pagination page={page} totalPages={totalPages} pageUrl={pageUrl} />
+                    우선작업
+                </span>
+                <p style={{ color: "#9ca3af", margin: 0 }}>
+                    총 <strong style={{ color: "#dc2626" }}>{total}</strong>건
+                    {q && (
+                        <span style={{ marginLeft: 8, color: "#6b7280" }}>
+                            &quot;{q}&quot; 검색결과
+                        </span>
+                    )}
+                </p>
             </div>
+
+            <FilterBar
+                currentStatus=""
+                currentMethod={fMethod ?? ""}
+                currentSource={fSource ?? ""}
+                currentPrint={fPrint ?? ""}
+                currentPost={fPost ?? ""}
+                currentConsult={fConsult ?? ""}
+                currentDateFrom={fDateFrom ?? ""}
+                currentDateTo={fDateTo ?? ""}
+                currentSortBy={fSortBy ?? ""}
+                currentSortDir={fSortDir ?? "desc"}
+            />
+
+            <BoardTable
+                tasks={tasks}
+                total={total}
+                from={from}
+                designers={designers ?? []}
+                writeButton={<WriteButton />}
+                canEditDesigner={isAdmin || isDesigner}
+            />
+
+            <Pagination page={page} totalPages={totalPages} pageUrl={pageUrl} />
+        </div>
     );
 }

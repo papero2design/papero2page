@@ -30,7 +30,6 @@ export default async function StatsPage() {
         { count: totalDone },
         { count: totalPriority },
         { count: totalTrash },
-        { count: totalQuick },
     ] = await Promise.all([
         supabase
             .from("tasks")
@@ -52,29 +51,7 @@ export default async function StatsPage() {
             .from("tasks")
             .select("id", { count: "exact", head: true })
             .not("deleted_at", "is", null),
-        supabase
-            .from("tasks")
-            .select("id", { count: "exact", head: true })
-            .is("deleted_at", null)
-            .neq("status", "완료")
-            .eq("is_quick", true),
     ]);
-
-    // 상태별 현황
-    const { data: statusRows } = await supabase
-        .from("tasks")
-        .select("status")
-        .is("deleted_at", null)
-        .neq("status", "완료");
-
-    const statusMap: Record<string, number> = {
-        대기중: 0,
-        진행중: 0,
-        검수대기: 0,
-    };
-    (statusRows ?? []).forEach((r) => {
-        if (r.status in statusMap) statusMap[r.status]++;
-    });
 
     // 디자이너 목록
     const { data: designers } = await supabase
@@ -101,7 +78,7 @@ export default async function StatsPage() {
             </div>
 
             {/* 전체 현황 카드 */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
                 {[
                     {
                         label: "우선작업",
@@ -110,25 +87,17 @@ export default async function StatsPage() {
                         href: "/board/quick",
                     },
                     {
-                        label: "간단작업",
-                        value: totalQuick ?? 0,
-                        icon: AlertCircle,
-                        href: "/board/simple",
-                    },
-
-                    {
-                        label: "등록작업",
+                        label: "작업등록",
                         value: totalActive ?? 0,
                         icon: Clock,
                         href: "/board",
                     },
                     {
-                        label: "완료작업",
+                        label: "작업완료",
                         value: totalDone ?? 0,
                         icon: CheckCircle2,
                         href: "/board/done",
                     },
-
                     {
                         label: "휴지통",
                         value: totalTrash ?? 0,
@@ -150,28 +119,6 @@ export default async function StatsPage() {
                         <div className="text-3xl font-bold text-gray-900 tracking-tight">
                             {value}
                         </div>
-                    </Link>
-                ))}
-            </div>
-
-            {/* 상태별 현황 */}
-            <div className="flex flex-col md:flex-row gap-4 mb-10">
-                {[
-                    { label: "대기중", query: "대기중" },
-                    { label: "진행중", query: "진행중" },
-                    { label: "검수대기", query: "검수대기" },
-                ].map(({ label, query }) => (
-                    <Link
-                        key={label}
-                        href={`/board?status=${query}`}
-                        className="flex-1 py-4 px-6 rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-between hover:bg-white hover:shadow-sm hover:border-gray-300 transition-all cursor-pointer"
-                    >
-                        <span className="text-sm font-medium text-gray-600">
-                            {label}
-                        </span>
-                        <span className="text-2xl font-bold text-gray-900">
-                            {statusMap[query]}
-                        </span>
                     </Link>
                 ))}
             </div>

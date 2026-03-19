@@ -3,6 +3,7 @@
 
 import { useState, useTransition } from "react";
 import { uploadToR2 } from "@/lib/r2/upload";
+import { useToast } from "../Toast";
 import {
     createDesignerAccount,
     updateDesigner,
@@ -12,6 +13,7 @@ import {
     linkDesignerAccount,
     reactivateDesigner,
     changeDesignerEmail,
+    hardDeleteDesigner,
 } from "./actions";
 
 type Designer = {
@@ -24,10 +26,12 @@ type Designer = {
     email: string;
 };
 
-const STATUSES = ["여유", "작업중", "바쁨"] as const;
+const STATUSES = ["연차", "반차", "외출", "작업중", "바쁨"] as const;
 const STATUS_COLOR: Record<string, { dot: string; bg: string; text: string }> =
     {
-        여유: { dot: "#1ED67D", bg: "#f0fdf4", text: "#15803d" },
+        연차: { dot: "#94a3b8", bg: "#f8fafc", text: "#475569" },
+        반차: { dot: "#a78bfa", bg: "#f5f3ff", text: "#6d28d9" },
+        외출: { dot: "#f97316", bg: "#fff7ed", text: "#c2410c" },
         작업중: { dot: "#f59e0b", bg: "#fffbeb", text: "#b45309" },
         바쁨: { dot: "#ef4444", bg: "#fef2f2", text: "#dc2626" },
     };
@@ -44,7 +48,6 @@ function CreateModal({
         name: "",
         email: "",
         password: "",
-        status: "여유",
     });
     const [isPending, startTransition] = useTransition();
     const [error, setError] = useState("");
@@ -61,7 +64,7 @@ function CreateModal({
         setError("");
         startTransition(async () => {
             try {
-                await createDesignerAccount(form);
+                await createDesignerAccount({ ...form, status: "작업중" });
                 onCreated();
                 onClose();
             } catch (err) {
@@ -141,19 +144,24 @@ function CreateModal({
                             ⚠ {error}
                         </div>
                     )}
-                    <label style={labelStyle}>
-                        이름 <span style={{ color: "#ef4444" }}>*</span>
+                    <label className="flex justify-center " style={labelStyle}>
+                        <span className="w-15 flex self-center">이름</span>
+                        <span style={{ color: "#ef4444" }}>*</span>
                         <input
                             value={form.name}
                             onChange={(e) =>
-                                setForm((p) => ({ ...p, name: e.target.value }))
+                                setForm((p) => ({
+                                    ...p,
+                                    name: e.target.value,
+                                }))
                             }
                             placeholder="홍길동"
                             style={inputStyle}
                         />
                     </label>
                     <label style={labelStyle}>
-                        이메일 <span style={{ color: "#ef4444" }}>*</span>
+                        <span className="w-15 self-center">이메일</span>
+                        <span style={{ color: "#ef4444" }}>*</span>
                         <input
                             type="email"
                             value={form.email}
@@ -168,7 +176,8 @@ function CreateModal({
                         />
                     </label>
                     <label style={labelStyle}>
-                        임시 비밀번호{" "}
+                        <span className="w-15 self-center">비밀번호</span>
+
                         <span style={{ color: "#ef4444" }}>*</span>
                         <input
                             type="password"
@@ -182,56 +191,6 @@ function CreateModal({
                             placeholder="6자 이상"
                             style={inputStyle}
                         />
-                    </label>
-                    <label style={labelStyle}>
-                        초기 상태
-                        <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                            {STATUSES.map((s) => (
-                                <button
-                                    key={s}
-                                    type="button"
-                                    onClick={() =>
-                                        setForm((p) => ({ ...p, status: s }))
-                                    }
-                                    style={{
-                                        padding: "4px 14px",
-                                        borderRadius: 99,
-                                        border: "1px solid",
-                                        borderColor:
-                                            form.status === s
-                                                ? STATUS_COLOR[s].dot
-                                                : "#e5e7eb",
-                                        background:
-                                            form.status === s
-                                                ? STATUS_COLOR[s].bg
-                                                : "#fff",
-                                        color:
-                                            form.status === s
-                                                ? STATUS_COLOR[s].text
-                                                : "#6b7280",
-                                        fontWeight:
-                                            form.status === s ? 700 : 400,
-                                        cursor: "pointer",
-                                        fontFamily: "inherit",
-                                    }}
-                                >
-                                    <span
-                                        style={{
-                                            width: 7,
-                                            height: 7,
-                                            borderRadius: "50%",
-                                            background:
-                                                form.status === s
-                                                    ? STATUS_COLOR[s].dot
-                                                    : "#d1d5db",
-                                            display: "inline-block",
-                                            marginRight: 5,
-                                        }}
-                                    />
-                                    {s}
-                                </button>
-                            ))}
-                        </div>
                     </label>
                 </div>
                 <div
@@ -280,8 +239,9 @@ function DesignerCard({
     const [newEmail, setNewEmail] = useState("");
     const [isPending, startTransition] = useTransition();
     const [uploading, setUploading] = useState(false);
+    const { showToast, ToastUI } = useToast();
 
-    const sc = STATUS_COLOR[designer.status] ?? STATUS_COLOR["여유"];
+    const sc = STATUS_COLOR[designer.status] ?? STATUS_COLOR["작업중"];
 
     // 아바타 업로드
     const handleAvatarChange = async (
@@ -295,7 +255,7 @@ function DesignerCard({
             await updateDesignerAvatar(designer.id, publicUrl);
             onRefresh();
         } catch (err) {
-            alert("업로드 실패: " + (err as Error).message);
+            showToast("업로드 실패: " + (err as Error).message);
         } finally {
             setUploading(false);
         }
@@ -311,7 +271,7 @@ function DesignerCard({
                 setEditing(false);
                 onRefresh();
             } catch (err) {
-                alert((err as Error).message);
+                showToast((err as Error).message);
             }
         });
     };
@@ -323,7 +283,7 @@ function DesignerCard({
                 await deactivateDesigner(designer.id);
                 onRefresh();
             } catch (err) {
-                alert((err as Error).message);
+                showToast((err as Error).message);
             }
         });
     };
@@ -335,14 +295,31 @@ function DesignerCard({
                 await reactivateDesigner(designer.id);
                 onRefresh();
             } catch (err) {
-                alert((err as Error).message);
+                showToast((err as Error).message);
+            }
+        });
+    };
+
+    const handleHardDelete = () => {
+        if (
+            !confirm(
+                `"${designer.name}"을(를) 영구삭제할까요?\n\n담당 작업은 모두 미배정으로 변경되며, 이 작업은 되돌릴 수 없습니다.`,
+            )
+        )
+            return;
+        startTransition(async () => {
+            try {
+                await hardDeleteDesigner(designer.id);
+                onRefresh();
+            } catch (err) {
+                showToast((err as Error).message);
             }
         });
     };
 
     const handleLink = () => {
         if (!linkForm.email.trim() || linkForm.password.length < 6) {
-            alert("이메일과 비밀번호(6자 이상)를 입력하세요.");
+            showToast("이메일과 비밀번호(6자 이상)를 입력하세요.");
             return;
         }
         startTransition(async () => {
@@ -352,14 +329,14 @@ function DesignerCard({
                 setLinkForm({ email: "", password: "" });
                 onRefresh();
             } catch (err) {
-                alert((err as Error).message);
+                showToast((err as Error).message);
             }
         });
     };
 
     const handleChangeEmail = () => {
         if (!newEmail.trim()) {
-            alert("새 이메일을 입력하세요.");
+            showToast("새 이메일을 입력하세요.");
             return;
         }
         startTransition(async () => {
@@ -367,21 +344,27 @@ function DesignerCard({
                 await changeDesignerEmail(designer.user_id!, newEmail.trim());
                 setEmailModal(false);
                 setNewEmail("");
-                alert("이메일이 변경됐습니다.");
+                showToast("이메일이 변경됐습니다.", "success");
                 onRefresh();
             } catch (err) {
-                alert((err as Error).message);
+                const msg = (err as Error).message;
+                showToast(msg);
+                // user_id가 초기화된 경우 UI도 갱신
+                if (msg.includes("계정 연결이 초기화")) {
+                    setEmailModal(false);
+                    onRefresh();
+                }
             }
         });
     };
 
     const handlePwReset = () => {
         if (!designer.user_id) {
-            alert("연결된 계정이 없습니다.");
+            showToast("연결된 계정이 없습니다.");
             return;
         }
         if (newPw.length < 6) {
-            alert("6자 이상 입력하세요.");
+            showToast("6자 이상 입력하세요.");
             return;
         }
         startTransition(async () => {
@@ -389,14 +372,16 @@ function DesignerCard({
                 await resetDesignerPassword(designer.user_id!, newPw);
                 setPwModal(false);
                 setNewPw("");
-                alert("비밀번호가 변경됐습니다.");
+                showToast("비밀번호가 변경됐습니다.", "success");
             } catch (err) {
-                alert((err as Error).message);
+                showToast((err as Error).message);
             }
         });
     };
 
     return (
+        <>
+        {ToastUI}
         <div
             style={{
                 background: "#fff",
@@ -519,7 +504,8 @@ function DesignerCard({
                         <div
                             style={{
                                 display: "flex",
-                                gap: 4,
+                                flexWrap: "wrap",
+                                gap: 5,
                                 justifyContent: "center",
                             }}
                         >
@@ -534,7 +520,7 @@ function DesignerCard({
                                         }))
                                     }
                                     style={{
-                                        padding: "3px 10px",
+                                        padding: "4px 12px",
                                         borderRadius: 99,
                                         border: "1px solid",
                                         borderColor:
@@ -553,6 +539,7 @@ function DesignerCard({
                                             editForm.status === s ? 700 : 400,
                                         cursor: "pointer",
                                         fontFamily: "inherit",
+                                        whiteSpace: "nowrap",
                                     }}
                                 >
                                     {s}
@@ -776,7 +763,7 @@ function DesignerCard({
                                         color: "#6b7280",
                                     }}
                                 >
-                                    🔑 비밀번호 변경
+                                    비밀번호 변경
                                 </button>
                             </>
                         )}
@@ -800,24 +787,44 @@ function DesignerCard({
                                 비활성화
                             </button>
                         ) : (
-                            <button
-                                onClick={handleReactivate}
-                                disabled={isPending}
-                                style={{
-                                    width: "100%",
-                                    padding: "6px",
-                                    border: "1px solid #86efac",
-                                    borderRadius: 6,
-                                    background: "#f0fdf4",
-                                    color: "#15803d",
-                                    cursor: "pointer",
-                                    fontWeight: 600,
-                                    fontFamily: "inherit",
-                                    opacity: isPending ? 0.5 : 1,
-                                }}
-                            >
-                                ↩ 재활성화
-                            </button>
+                            <>
+                                <button
+                                    onClick={handleReactivate}
+                                    disabled={isPending}
+                                    style={{
+                                        width: "100%",
+                                        padding: "6px",
+                                        border: "1px solid #86efac",
+                                        borderRadius: 6,
+                                        background: "#f0fdf4",
+                                        color: "#15803d",
+                                        cursor: "pointer",
+                                        fontWeight: 600,
+                                        fontFamily: "inherit",
+                                        opacity: isPending ? 0.5 : 1,
+                                    }}
+                                >
+                                    ↩ 재활성화
+                                </button>
+                                <button
+                                    onClick={handleHardDelete}
+                                    disabled={isPending}
+                                    style={{
+                                        width: "100%",
+                                        padding: "6px",
+                                        border: "1px solid #fca5a5",
+                                        borderRadius: 6,
+                                        background: "#fff",
+                                        color: "#dc2626",
+                                        cursor: "pointer",
+                                        fontWeight: 600,
+                                        fontFamily: "inherit",
+                                        opacity: isPending ? 0.5 : 1,
+                                    }}
+                                >
+                                    영구삭제
+                                </button>
+                            </>
                         )}
                     </>
                 )}
@@ -1123,6 +1130,7 @@ function DesignerCard({
                 </div>
             )}
         </div>
+        </>
     );
 }
 
@@ -1273,7 +1281,6 @@ export default function DesignerManageClient({
 // ─── 스타일 헬퍼 ──────────────────────────────────────────────
 const labelStyle: React.CSSProperties = {
     display: "flex",
-    flexDirection: "column",
     gap: 6,
     fontWeight: 600,
     color: "#374151",

@@ -27,6 +27,7 @@ interface Props {
     currentSource: string;
     currentPrint: string;
     currentPost: string;
+    currentConsult: string;
     currentDateFrom: string;
     currentDateTo: string;
     currentSortBy: string;
@@ -39,6 +40,7 @@ export default function FilterBar({
     currentSource,
     currentPrint,
     currentPost,
+    currentConsult,
     currentDateFrom,
     currentDateTo,
     currentSortBy,
@@ -67,6 +69,7 @@ export default function FilterBar({
             "source",
             "print",
             "post",
+            "consult",
             "dateFrom",
             "dateTo",
         ].forEach((k) => params.delete(k));
@@ -80,6 +83,7 @@ export default function FilterBar({
         currentSource,
         currentPrint,
         currentPost,
+        currentConsult,
         currentDateFrom,
         currentDateTo,
     ].filter(Boolean);
@@ -121,6 +125,16 @@ export default function FilterBar({
                         value: p,
                         label: p,
                     }))}
+                />
+                <Sel
+                    value={currentConsult}
+                    onChange={(v) => setParam("consult", v)}
+                    placeholder="상담경로"
+                    options={[
+                        { value: "네이버", label: "네이버" },
+                        { value: "카카오", label: "카카오" },
+                        { value: "기타", label: "기타" },
+                    ]}
                 />
 
                 {/* 인쇄항목 텍스트 검색 */}
@@ -263,6 +277,12 @@ export default function FilterBar({
                         <Badge
                             label={`후가공: ${currentPost}`}
                             onRemove={() => setParam("post", "")}
+                        />
+                    )}
+                    {currentConsult && (
+                        <Badge
+                            label={`상담경로: ${currentConsult}`}
+                            onRemove={() => setParam("consult", "")}
                         />
                     )}
                     {currentDateFrom && (

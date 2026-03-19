@@ -69,6 +69,21 @@ export async function updateMyMusic(
     revalidatePath(`/board/designers/${designerId}`);
 }
 
+export async function updateMyBanner(
+    designerId: string,
+    data: { banner_color: string | null },
+) {
+    const { supabase } = await assertSelfOrAdmin(designerId);
+
+    const { error } = await supabase
+        .from("designers")
+        .update({ banner_color: data.banner_color })
+        .eq("id", designerId);
+    if (error) throw new Error(`배너 저장 실패: ${error.message}`);
+
+    revalidatePath(`/board/designers/${designerId}`);
+}
+
 export async function updateMyAvatar(designerId: string, avatarUrl: string) {
     const { supabase } = await assertSelfOrAdmin(designerId);
 

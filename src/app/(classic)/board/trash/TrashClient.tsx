@@ -3,20 +3,9 @@
 
 import { useState, useTransition } from "react";
 import { restoreTask, hardDeleteTask } from "../actions";
-
-export interface TrashTask {
-    id: string;
-    task_number: number | null;
-    customer_name: string;
-    order_source: string;
-    order_method: string;
-    print_items: string;
-    status: string;
-    is_priority: boolean;
-    created_at: string;
-    deleted_at: string;
-    designer: { id: string; name: string } | null;
-}
+import { TaskDetailModal } from "../BoardTable";
+import { type TaskWithDesigner } from "@/types/database";
+import { useToast } from "../Toast";
 
 function ConfirmDialog({
     message,
@@ -63,13 +52,7 @@ function ConfirmDialog({
                 >
                     {message}
                 </p>
-                <div
-                    style={{
-                        display: "flex",
-                        gap: 8,
-                        justifyContent: "flex-end",
-                    }}
-                >
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                     <button onClick={onCancel} style={btn(false)}>
                         취소
                     </button>
@@ -77,12 +60,7 @@ function ConfirmDialog({
                         onClick={onConfirm}
                         style={{
                             ...btn(true),
-                            ...(danger
-                                ? {
-                                      background: "#ef4444",
-                                      borderColor: "#ef4444",
-                                  }
-                                : {}),
+                            ...(danger ? { background: "#ef4444", borderColor: "#ef4444" } : {}),
                         }}
                     >
                         {confirmLabel}
@@ -96,36 +74,37 @@ function ConfirmDialog({
 export default function TrashClient({
     tasks: initialTasks,
 }: {
-    tasks: TrashTask[];
+    tasks: TaskWithDesigner[];
 }) {
     const [tasks, setTasks] = useState(initialTasks);
     const [isPending, startTransition] = useTransition();
+    const [modalTask, setModalTask] = useState<TaskWithDesigner | null>(null);
+    const [restoreTarget, setRestoreTarget] = useState<TaskWithDesigner | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<TaskWithDesigner | null>(null);
+    const { showToast, ToastUI } = useToast();
 
-    // 복구 확인
-    const [restoreTarget, setRestoreTarget] = useState<TrashTask | null>(null);
-    // 영구삭제 확인
-    const [deleteTarget, setDeleteTarget] = useState<TrashTask | null>(null);
-
-    const handleRestore = (task: TrashTask) => {
+    const handleRestore = (task: TaskWithDesigner) => {
         setRestoreTarget(null);
         startTransition(async () => {
             try {
                 await restoreTask(task.id);
                 setTasks((prev) => prev.filter((t) => t.id !== task.id));
+                if (modalTask?.id === task.id) setModalTask(null);
             } catch (err) {
-                alert("복구 실패: " + (err as Error).message);
+                showToast("복구 실패: " + (err as Error).message);
             }
         });
     };
 
-    const handleHardDelete = (task: TrashTask) => {
+    const handleHardDelete = (task: TaskWithDesigner) => {
         setDeleteTarget(null);
         startTransition(async () => {
             try {
                 await hardDeleteTask(task.id);
                 setTasks((prev) => prev.filter((t) => t.id !== task.id));
+                if (modalTask?.id === task.id) setModalTask(null);
             } catch (err) {
-                alert("영구삭제 실패: " + (err as Error).message);
+                showToast("영구삭제 실패: " + (err as Error).message);
             }
         });
     };
@@ -142,9 +121,7 @@ export default function TrashClient({
                 }}
             >
                 <div style={{ fontSize: 32, marginBottom: 8 }}>🗑</div>
-                <p style={{ margin: 0, fontWeight: 600 }}>
-                    휴지통이 비어있습니다
-                </p>
+                <p style={{ margin: 0, fontWeight: 600 }}>휴지통이 비어있습니다</p>
                 <p style={{ margin: "4px 0 0", color: "#d1d5db" }}>
                     삭제된 작업이 여기에 표시됩니다
                 </p>
@@ -153,6 +130,21 @@ export default function TrashClient({
 
     return (
         <>
+            {ToastUI}
+            {/* 상세보기 모달 */}
+            {modalTask && (
+                <TaskDetailModal
+                    task={modalTask}
+                    onClose={() => setModalTask(null)}
+                    onDeleted={() => {
+                        setTasks((prev) => prev.filter((t) => t.id !== modalTask.id));
+                        setModalTask(null);
+                    }}
+                    designers={[]}
+                    canEditDesigner={false}
+                />
+            )}
+
             {restoreTarget && (
                 <ConfirmDialog
                     message={`"${restoreTarget.customer_name}" 작업을 복구할까요?\n작업 목록으로 돌아갑니다.`}
@@ -180,15 +172,7 @@ export default function TrashClient({
                             background: "#f9fafb",
                         }}
                     >
-                        {[
-                            "번호",
-                            "고객이름",
-                            "주문방법",
-                            "인쇄항목",
-                            "담당 디자이너",
-                            "삭제일",
-                            "",
-                        ].map((h) => (
+                        {["번호", "고객이름", "주문방법", "인쇄항목", "담당 디자이너", "삭제일", ""].map((h) => (
                             <th
                                 key={h}
                                 style={{
@@ -206,22 +190,30 @@ export default function TrashClient({
                 </thead>
                 <tbody>
                     {tasks.map((task) => {
-                        const deletedAt = new Date(
-                            task.deleted_at,
-                        ).toLocaleString("ko-KR", {
-                            month: "2-digit",
-                            day: "2-digit",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                        });
+                        const deletedAt = task.deleted_at
+                            ? new Date(task.deleted_at).toLocaleString("ko-KR", {
+                                  month: "2-digit",
+                                  day: "2-digit",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                              })
+                            : "—";
                         return (
                             <tr
                                 key={task.id}
+                                onClick={() => setModalTask(task)}
                                 style={{
                                     borderBottom: "1px solid #f3f4f6",
                                     opacity: isPending ? 0.5 : 1,
                                     transition: "opacity 0.15s",
+                                    cursor: "pointer",
                                 }}
+                                onMouseEnter={(e) =>
+                                    (e.currentTarget.style.background = "#f9fafb")
+                                }
+                                onMouseLeave={(e) =>
+                                    (e.currentTarget.style.background = "")
+                                }
                             >
                                 <td style={td}>
                                     <span style={{ color: "#9ca3af" }}>
@@ -229,12 +221,7 @@ export default function TrashClient({
                                     </span>
                                 </td>
                                 <td style={td}>
-                                    <span
-                                        style={{
-                                            fontWeight: 700,
-                                            color: "#111827",
-                                        }}
-                                    >
+                                    <span style={{ fontWeight: 700, color: "#111827" }}>
                                         {task.customer_name}
                                     </span>
                                     {task.is_priority && (
@@ -273,38 +260,28 @@ export default function TrashClient({
                                 <td
                                     style={{
                                         ...td,
-                                        color: task.designer?.name
-                                            ? "#374151"
-                                            : "#d1d5db",
+                                        color: task.designer?.name ? "#374151" : "#d1d5db",
                                     }}
                                 >
                                     {task.designer?.name ?? "미배정"}
                                 </td>
-                                <td
-                                    style={{
-                                        ...td,
-                                        color: "#9ca3af",
-                                        whiteSpace: "nowrap",
-                                    }}
-                                >
+                                <td style={{ ...td, color: "#9ca3af", whiteSpace: "nowrap" }}>
                                     {deletedAt}
                                 </td>
                                 <td style={{ ...td, whiteSpace: "nowrap" }}>
-                                    <div style={{ display: "flex", gap: 6 }}>
-                                        {/* 복구 */}
+                                    <div
+                                        style={{ display: "flex", gap: 6 }}
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
                                         <button
-                                            onClick={() =>
-                                                setRestoreTarget(task)
-                                            }
+                                            onClick={() => setRestoreTarget(task)}
                                             disabled={isPending}
                                             style={{
                                                 padding: "4px 12px",
                                                 fontWeight: 600,
                                                 border: "1px solid #d1fae5",
                                                 borderRadius: 4,
-                                                cursor: isPending
-                                                    ? "not-allowed"
-                                                    : "pointer",
+                                                cursor: isPending ? "not-allowed" : "pointer",
                                                 background: "#f0fdf4",
                                                 color: "#15803d",
                                                 fontFamily: "inherit",
@@ -313,20 +290,15 @@ export default function TrashClient({
                                         >
                                             ↩ 복구
                                         </button>
-                                        {/* 영구삭제 */}
                                         <button
-                                            onClick={() =>
-                                                setDeleteTarget(task)
-                                            }
+                                            onClick={() => setDeleteTarget(task)}
                                             disabled={isPending}
                                             style={{
                                                 padding: "4px 12px",
                                                 fontWeight: 600,
                                                 border: "1px solid #fecaca",
                                                 borderRadius: 4,
-                                                cursor: isPending
-                                                    ? "not-allowed"
-                                                    : "pointer",
+                                                cursor: isPending ? "not-allowed" : "pointer",
                                                 background: "#fff",
                                                 color: "#ef4444",
                                                 fontFamily: "inherit",

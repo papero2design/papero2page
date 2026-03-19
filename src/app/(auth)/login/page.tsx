@@ -11,10 +11,25 @@ const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 );
 
+const LS_EMAIL = "login_email";
+const LS_PASSWORD = "login_password";
+const LS_SAVE = "login_save";
+
 export default function LoginPage() {
     const router = useRouter();
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
+    const [saveCredentials, setSaveCredentials] = useState(
+        () => typeof window !== "undefined" && localStorage.getItem(LS_SAVE) === "1",
+    );
+    const [email, setEmail] = useState(
+        () => (typeof window !== "undefined" && localStorage.getItem(LS_SAVE) === "1")
+            ? (localStorage.getItem(LS_EMAIL) ?? "")
+            : "",
+    );
+    const [password, setPassword] = useState(
+        () => (typeof window !== "undefined" && localStorage.getItem(LS_SAVE) === "1")
+            ? (localStorage.getItem(LS_PASSWORD) ?? "")
+            : "",
+    );
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
 
@@ -23,8 +38,10 @@ export default function LoginPage() {
         setError("");
         setLoading(true);
 
-        const { data, error: authError } =
-            await supabase.auth.signInWithPassword({ email, password });
+        const { data, error: authError } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+        });
 
         if (authError) {
             setError("이메일 또는 비밀번호가 올바르지 않습니다.");
@@ -32,7 +49,18 @@ export default function LoginPage() {
             return;
         }
 
-        // 역할에 따라 다른 페이지로 이동
+        // 체크 여부에 따라 저장/삭제
+        if (saveCredentials) {
+            localStorage.setItem(LS_SAVE, "1");
+            localStorage.setItem(LS_EMAIL, email);
+            localStorage.setItem(LS_PASSWORD, password);
+        } else {
+            localStorage.removeItem(LS_SAVE);
+            localStorage.removeItem(LS_EMAIL);
+            localStorage.removeItem(LS_PASSWORD);
+        }
+
+        // 역할에 따라 이동
         const userId = data.user?.id;
         let dest = "/board";
 
@@ -53,7 +81,6 @@ export default function LoginPage() {
             }
         }
 
-        // router.refresh() → 서버 컴포넌트 캐시 초기화 후 이동
         router.refresh();
         router.push(dest);
     };
@@ -114,13 +141,7 @@ export default function LoginPage() {
                     </div>
                 )}
 
-                <div
-                    style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 12,
-                    }}
-                >
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                     <div>
                         <label
                             style={{
@@ -136,9 +157,7 @@ export default function LoginPage() {
                             type="email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            onKeyDown={(e) =>
-                                e.key === "Enter" && handleLogin()
-                            }
+                            onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                             placeholder="example@email.com"
                             autoFocus
                             style={{
@@ -167,9 +186,7 @@ export default function LoginPage() {
                             type="password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            onKeyDown={(e) =>
-                                e.key === "Enter" && handleLogin()
-                            }
+                            onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                             placeholder="••••••••"
                             style={{
                                 width: "100%",
@@ -182,6 +199,29 @@ export default function LoginPage() {
                             }}
                         />
                     </div>
+
+                    {/* 아이디/비밀번호 저장 */}
+                    <label
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            cursor: "pointer",
+                            fontSize: 14,
+                            color: "#4b5563",
+                            userSelect: "none",
+                            marginTop: 2,
+                        }}
+                    >
+                        <input
+                            type="checkbox"
+                            checked={saveCredentials}
+                            onChange={(e) => setSaveCredentials(e.target.checked)}
+                            style={{ width: 15, height: 15, cursor: "pointer" }}
+                        />
+                        아이디/비밀번호 저장
+                    </label>
+
                     <button
                         onClick={handleLogin}
                         disabled={loading || !email || !password}
@@ -190,16 +230,12 @@ export default function LoginPage() {
                             width: "100%",
                             padding: "11px",
                             background:
-                                loading || !email || !password
-                                    ? "#d1d5db"
-                                    : "#111827",
+                                loading || !email || !password ? "#d1d5db" : "#111827",
                             color: "#fff",
                             border: "none",
                             borderRadius: 8,
                             cursor:
-                                loading || !email || !password
-                                    ? "not-allowed"
-                                    : "pointer",
+                                loading || !email || !password ? "not-allowed" : "pointer",
                             fontWeight: 700,
                             fontSize: 15,
                             transition: "background 0.1s",

@@ -31,12 +31,13 @@ export async function createDesignerAccount(data: {
     await assertAdmin();
     const adminClient = createAdminClient();
 
-    // 1. Auth 계정 생성
-    // email_confirm 제거 — 일부 Supabase 환경에서 "User not allowed" 유발
+    // 1. Auth 계정 생성 (user_metadata에 role 제외 — profiles trigger constraint 우회)
     const { data: authData, error: authError } =
         await adminClient.auth.admin.createUser({
             email: data.email,
             password: data.password,
+            email_confirm: true,
+            user_metadata: { name: data.name },
         });
 
     if (authError) {
@@ -51,12 +52,13 @@ export async function createDesignerAccount(data: {
 
     const newUserId = authData.user.id;
 
-    // 2. profiles 테이블에 role = 'designer' 등록
-    const { error: profileError } = await adminClient.from("profiles").insert({
-        id: newUserId,
-        role: "designer",
-        name: data.name,
-    });
+    // 2. profiles 테이블에 role = 'designer' 등록 (트리거로 이미 생성됐을 수 있으므로 upsert)
+    const { error: profileError } = await adminClient
+        .from("profiles")
+        .upsert(
+            { id: newUserId, role: "designer", name: data.name },
+            { onConflict: "id" },
+        );
     if (profileError)
         throw new Error(`프로필 생성 실패: ${profileError.message}`);
 
@@ -206,55 +208,82 @@ export async function linkDesignerAccount(
     await assertAdmin();
     const adminClient = createAdminClient();
 
-    // 디버그: 어느 디자이너에 연결하는지 확인
-    console.log(
-        "[linkDesignerAccount] designerId:",
-        designerId,
-        "email:",
-        data.email,
-    );
-
-    // 1. Auth 계정 생성
-    const { data: authData, error: authError } =
-        await adminClient.auth.admin.createUser({
-            email: data.email,
-            password: data.password,
-        });
-    if (authError) throw new Error(`계정 생성 실패: ${authError.message}`);
-
-    const newUserId = authData.user.id;
-    console.log("[linkDesignerAccount] newUserId:", newUserId);
-
-    // 2. 디자이너 이름 조회 (adminClient로 통일)
-    const { data: designerRow } = await adminClient
+    // 디자이너 이름 먼저 조회 (user_metadata에 포함)
+    const { data: designerForMeta } = await adminClient
         .from("designers")
         .select("name")
         .eq("id", designerId)
         .single();
 
-    // 3. profiles 등록
-    const { error: profileError } = await adminClient.from("profiles").insert({
-        id: newUserId,
-        role: "designer",
-        name: designerRow?.name ?? "",
-    });
+    // 1. Auth 계정 생성 (user_metadata에 role 제외 — profiles trigger constraint 우회)
+    const { data: authData, error: authError } =
+        await adminClient.auth.admin.createUser({
+            email: data.email,
+            password: data.password,
+            email_confirm: true,
+            user_metadata: { name: designerForMeta?.name ?? "" },
+        });
+    if (authError) throw new Error(`계정 생성 실패: ${authError.message}`);
+
+    const newUserId = authData.user.id;
+
+    // 2. profiles 등록 (트리거로 이미 생성됐을 수 있으므로 upsert)
+    const { error: profileError } = await adminClient
+        .from("profiles")
+        .upsert(
+            {
+                id: newUserId,
+                role: "designer",
+                name: designerForMeta?.name ?? "",
+            },
+            { onConflict: "id" },
+        );
     if (profileError)
         throw new Error(`프로필 생성 실패: ${profileError.message}`);
 
-    // 4. designers.user_id 업데이트 (adminClient로 통일 — RLS 우회)
-    const { error: linkError, data: updated } = await adminClient
+    // 3. designers.user_id 업데이트
+    const { error: linkError } = await adminClient
         .from("designers")
         .update({ user_id: newUserId })
-        .eq("id", designerId)
-        .select("id, name");
-
-    console.log(
-        "[linkDesignerAccount] updated:",
-        updated,
-        "error:",
-        linkError?.message,
-    );
+        .eq("id", designerId);
     if (linkError) throw new Error(`계정 연결 실패: ${linkError.message}`);
+
+    revalidatePath("/board/designers");
+    revalidatePath("/board");
+}
+
+// ── 디자이너 영구삭제 ─────────────────────────────────────────
+export async function hardDeleteDesigner(id: string) {
+    await assertAdmin();
+    const adminClient = createAdminClient();
+
+    // 1. 담당 디자이너로 배정된 작업들 → 미배정
+    await adminClient
+        .from("tasks")
+        .update({ assigned_designer_id: null })
+        .eq("assigned_designer_id", id);
+
+    // 2. 연결된 auth user 및 profile 삭제
+    const { data: designer } = await adminClient
+        .from("designers")
+        .select("user_id")
+        .eq("id", id)
+        .single();
+
+    if (designer?.user_id) {
+        await adminClient.auth.admin.deleteUser(designer.user_id);
+        await adminClient
+            .from("profiles")
+            .delete()
+            .eq("id", designer.user_id);
+    }
+
+    // 3. 디자이너 레코드 삭제
+    const { error } = await adminClient
+        .from("designers")
+        .delete()
+        .eq("id", id);
+    if (error) throw new Error(`영구삭제 실패: ${error.message}`);
 
     revalidatePath("/board/designers");
     revalidatePath("/board");
@@ -265,21 +294,28 @@ export async function changeDesignerEmail(userId: string, newEmail: string) {
     await assertAdmin();
     const adminClient = createAdminClient();
 
-    console.log("[changeDesignerEmail] userId:", userId, "newEmail:", newEmail);
-
-    const { data, error } = await adminClient.auth.admin.updateUserById(
-        userId,
-        {
-            email: newEmail,
-            email_confirm: true,
-        },
-    );
+    const { error } = await adminClient.auth.admin.updateUserById(userId, {
+        email: newEmail,
+        email_confirm: true,
+    });
 
     if (error) {
-        console.error("[changeDesignerEmail] error:", JSON.stringify(error));
+        // auth user가 존재하지 않으면 designers.user_id를 초기화
+        if (
+            error.message.toLowerCase().includes("user not found") ||
+            error.status === 404
+        ) {
+            await adminClient
+                .from("designers")
+                .update({ user_id: null })
+                .eq("user_id", userId);
+            revalidatePath("/board/designers");
+            throw new Error(
+                "연결된 auth 계정을 찾을 수 없습니다. 계정 연결이 초기화됐습니다.\n'계정 연결' 버튼으로 다시 연결해주세요.",
+            );
+        }
         throw new Error(`계정 변경 실패: ${error.message}`);
     }
 
-    console.log("[changeDesignerEmail] success:", data.user?.email);
     revalidatePath("/board/designers");
 }

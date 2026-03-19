@@ -222,6 +222,7 @@ export async function updateTask(
         consult_link: string | null;
         special_details: string | null;
         assigned_designer_id: string | null;
+        registered_by: string | null;
         is_priority: boolean;
         is_quick: boolean;
     },
@@ -356,6 +357,17 @@ export async function bulkUpdateDesigner(
     const { supabase, userId } = await getClient();
     const userName = await getCurrentUserName(supabase, userId);
 
+    // 변경 전 담당 디자이너 이름을 미리 조회
+    type TaskRow = { id: string; designer: { name: string } | null };
+    const { data: currentTasks } = await supabase
+        .from("tasks")
+        .select("id, designer:designers(name)")
+        .in("id", ids) as { data: TaskRow[] | null };
+
+    const oldNameMap = new Map<string, string | null>(
+        (currentTasks ?? []).map((t) => [t.id, t.designer?.name ?? null]),
+    );
+
     const { error } = await supabase
         .from("tasks")
         .update({ assigned_designer_id: designerId })
@@ -369,8 +381,8 @@ export async function bulkUpdateDesigner(
                 id,
                 userId,
                 "assigned_designer",
-                null,
-                designerName ?? "미배정",
+                oldNameMap.get(id) ?? null,
+                designerName ?? null,
                 "일괄 변경",
                 userName,
             ),

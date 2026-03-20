@@ -944,7 +944,7 @@ export function TaskDetailModal({
 
     const st = STATUS_STYLE[currentStatus] ?? STATUS_STYLE["작업중"];
 
-    type viewFields = [
+    const viewFields = [
         { label: "주문경로", value: task.order_source },
         { label: "고객이름", value: task.customer_name },
         { label: "주문방법", value: task.order_method },
@@ -966,7 +966,7 @@ export function TaskDetailModal({
         { label: "담당 디자이너", value: task.designer?.name ?? "미배정" },
         { label: "등록자", value: task.registered_by ?? "—" },
         { label: "접수일시", value: fmtDateTime(task.created_at) },
-    ] as { label: string; value: string; alert?: boolean }[];
+    ] as { label: string; value: string; alert?: boolean; link?: string }[];
 
     const showPpNote =
         BOX_TYPES.includes(form.post_processing) ||

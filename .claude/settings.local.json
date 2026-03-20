@@ -1,11 +1,13 @@
 {
-    "permissions": {
-        "allow": [
-            "mcp__ide__getDiagnostics",
-            "Bash(npx next:*)",
-            "Bash(ls:*)",
-            "Bash(find /workspace/o2design -name *.sql -o -name migrations -o -name *schema*)",
-            "Bash(find /g/workspace/o2design -type f \\\\\\(-name *.sql -o -name *migration* -o -name *schema* \\\\\\))"
-        ]
-    }
+  "permissions": {
+    "allow": [
+      "mcp__ide__getDiagnostics",
+      "Bash(npx next:*)",
+      "Bash(ls:*)",
+      "Bash(find /workspace/o2design -name *.sql -o -name migrations -o -name *schema*)",
+      "Bash(find /g/workspace/o2design -type f \\\\\\(-name *.sql -o -name *migration* -o -name *schema* \\\\\\))",
+      "Bash(wc -l \"g:\\\\workspace\\\\o2design\\\\src\\\\app\\\\\\(classic\\)\\\\board\\\\BoardTable.tsx\")",
+      "Bash(npm run:*)"
+    ]
+  }
 }

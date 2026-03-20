@@ -21,6 +21,7 @@ export default async function BoardPage({
     searchParams,
 }: {
     searchParams: Promise<{
+        tab?: string;
         page?: string;
         q?: string;
         status?: string;
@@ -52,6 +53,7 @@ export default async function BoardPage({
     const isDesigner = profileData?.role === "designer";
 
     const {
+        tab: fTab,
         page: pageParam,
         q,
         status: fStatus,
@@ -66,18 +68,39 @@ export default async function BoardPage({
         sortDir: fSortDir,
     } = await searchParams;
 
+    const tab = fTab ?? "active"; // 기본값: active
     const page = Math.max(1, Number(pageParam ?? 1));
     const from = (page - 1) * PAGE_SIZE;
-    const sortBy = fSortBy ?? "created_at";
+
+    // done 탭은 기본 정렬이 completed_at, 나머지는 created_at
+    const defaultSortBy = tab === "done" ? "completed_at" : "created_at";
+    const sortBy = fSortBy ?? defaultSortBy;
     const sortAsc = fSortDir === "asc";
 
     let query = supabase
         .from("tasks")
         .select(TASK_SELECT, { count: "exact" })
-        .is("deleted_at", null)
-        .neq("status", "완료")
-        .eq("is_priority", false)
-        .is("assigned_designer_id", null)
+        .is("deleted_at", null);
+
+    // 탭별 조건 분기
+    if (tab === "done") {
+        // 작업완료: status=완료 (done/page.tsx 로직)
+        query = query.eq("status", "완료");
+    } else if (tab === "priority") {
+        // 우선작업: is_priority=true, status != 완료, assigned_designer_id IS NULL (quick/page.tsx 로직)
+        query = query
+            .neq("status", "완료")
+            .eq("is_priority", true)
+            .is("assigned_designer_id", null);
+    } else {
+        // 작업등록 (active): is_priority=false, status != 완료, assigned_designer_id IS NULL (기존 page.tsx 로직)
+        query = query
+            .neq("status", "완료")
+            .eq("is_priority", false)
+            .is("assigned_designer_id", null);
+    }
+
+    query = query
         .order(sortBy, { ascending: sortAsc })
         .range(from, from + PAGE_SIZE - 1);
 
@@ -109,6 +132,7 @@ export default async function BoardPage({
     const pageUrl = (p: number) => {
         const params = new URLSearchParams();
         params.set("page", String(p));
+        if (tab !== "active") params.set("tab", tab);
         if (q) params.set("q", q);
         if (fStatus) params.set("status", fStatus);
         if (fMethod) params.set("method", fMethod);
@@ -162,7 +186,7 @@ export default async function BoardPage({
             </div>
 
             <FilterBar
-                currentStatus={fStatus ?? ""}
+                currentStatus={tab === "done" ? "" : fStatus ?? ""}
                 currentMethod={fMethod ?? ""}
                 currentSource={fSource ?? ""}
                 currentPrint={fPrint ?? ""}
@@ -180,7 +204,7 @@ export default async function BoardPage({
                 from={from}
                 designers={designers ?? []}
                 canEditDesigner={isAdmin || isDesigner}
-                writeButton={<WriteButton />}
+                writeButton={tab !== "done" ? <WriteButton /> : undefined}
             />
 
             <Pagination page={page} totalPages={totalPages} pageUrl={pageUrl} />

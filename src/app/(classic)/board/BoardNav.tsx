@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 interface Designer {
     id: string;
@@ -52,9 +52,28 @@ export default function BoardNav({
     doneCount = 0,
 }: Props) {
     const pathname = usePathname();
+    const searchParams = useSearchParams();
 
-    const isActive = (href: string) =>
-        pathname === href || pathname.startsWith(href + "/");
+    // /board 페이지에서는 tab 파라미터로 활성 판단
+    // 다른 경로(/designers/[id], /trash 등)는 pathname으로 판단
+    const currentTab = searchParams.get("tab") ?? "active";
+
+    const isTabActive = (tab: string) =>
+        pathname === "/board" && currentTab === tab;
+
+    const isActive = (href: string) => {
+        if (href === "/board?tab=priority") {
+            return isTabActive("priority");
+        }
+        if (href === "/board?tab=done") {
+            return isTabActive("done");
+        }
+        if (href === "/board?tab=active") {
+            return isTabActive("active") || (pathname === "/board" && !searchParams.has("tab"));
+        }
+        // 다른 경로는 기존 pathname 방식
+        return pathname === href || pathname.startsWith(href + "/");
+    };
 
     const base =
         "flex items-center whitespace-nowrap px-4 py-2 font-semibold border-b-2 transition-colors";
@@ -72,9 +91,9 @@ export default function BoardNav({
                 {/* 우선작업 */}
                 <li className="flex-shrink-0">
                     <Link
-                        href="/board/quick"
+                        href="/board?tab=priority"
                         className={tabCls(
-                            "/board/quick",
+                            "/board?tab=priority",
                             "text-red-600",
                             "hover:text-red-500",
                         )}
@@ -87,9 +106,9 @@ export default function BoardNav({
                 {/* 작업등록 */}
                 <li className="flex-shrink-0">
                     <Link
-                        href="/board"
+                        href="/board?tab=active"
                         className={tabCls(
-                            "/board",
+                            "/board?tab=active",
                             "text-gray-900",
                             "hover:text-gray-800",
                         )}
@@ -154,9 +173,9 @@ export default function BoardNav({
                 {/* 작업완료 */}
                 <li className="flex-shrink-0">
                     <Link
-                        href="/board/done"
+                        href="/board?tab=done"
                         className={tabCls(
-                            "/board/done",
+                            "/board?tab=done",
                             "text-blue-600",
                             "hover:text-blue-500",
                         )}

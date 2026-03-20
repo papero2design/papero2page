@@ -56,6 +56,11 @@ export default function FilterBar({
             if (value) params.set(key, value);
             else params.delete(key);
             params.delete("page");
+            // tab 파라미터 유지
+            const currentTab = searchParams.get("tab");
+            if (currentTab && currentTab !== "active") {
+                params.set("tab", currentTab);
+            }
             router.push(`${pathname}?${params.toString()}`);
         },
         [router, pathname, searchParams],
@@ -74,6 +79,11 @@ export default function FilterBar({
             "dateTo",
         ].forEach((k) => params.delete(k));
         params.delete("page");
+        // tab 파라미터 유지
+        const currentTab = searchParams.get("tab");
+        if (currentTab && currentTab !== "active") {
+            params.set("tab", currentTab);
+        }
         router.push(`${pathname}?${params.toString()}`);
     }, [router, pathname, searchParams]);
 

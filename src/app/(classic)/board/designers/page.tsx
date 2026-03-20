@@ -31,15 +31,20 @@ export default async function DesignersPage() {
     if (userIds.length > 0) {
         try {
             const adminClient = createAdminClient();
-            // getUserById로 각각 직접 조회 — listUsers는 페이지네이션/정렬 문제 있음
-            await Promise.all(
-                userIds.map(async (uid) => {
-                    const {
-                        data: { user },
-                    } = await adminClient.auth.admin.getUserById(uid);
-                    if (user?.email) emailMap[uid] = user.email;
-                }),
-            );
+            const userIdSet = new Set(userIds);
+
+            // listUsers로 한 번에 모든 사용자 조회 (N+1 제거)
+            const { data } = await adminClient.auth.admin.listUsers({
+                perPage: 500,
+            });
+
+            if (data?.users) {
+                data.users.forEach((user) => {
+                    if (userIdSet.has(user.id) && user.email) {
+                        emailMap[user.id] = user.email;
+                    }
+                });
+            }
         } catch (e) {
             console.error("[designers page] email fetch failed:", e);
         }

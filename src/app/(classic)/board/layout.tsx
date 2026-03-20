@@ -7,7 +7,8 @@ import BoardNav from "./BoardNav";
 import Image from "next/image";
 import LogoutButton from "./LogoutButton";
 
-export const dynamic = "force-dynamic";
+// 기본적으로는 캐시됨. revalidatePath() 사용으로 필요할 때 재검증
+export const revalidate = 60; // 60초마다 재검증
 
 export default async function BoardLayout({
     children,

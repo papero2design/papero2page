@@ -41,6 +41,8 @@ export default async function BoardPage({
     } = await supabase.auth.getUser();
     if (!user) redirect("/login");
 
+    // profile 쿼리는 layout.tsx에서 이미 조회됨 (request 캐시)
+    // 여기서는 간단하게 권한 체크만 수행
     const { data: profileData } = await supabase
         .from("profiles")
         .select("role")

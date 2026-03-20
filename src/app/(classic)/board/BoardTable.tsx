@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useCallback, useRef } from "react";
+import { useState, useTransition, useEffect, useCallback, useRef, memo } from "react";
 import { TaskWithDesigner } from "@/types/database";
 import {
     updateTask,
@@ -1933,7 +1933,7 @@ export function TaskDetailModal({
 // 메인 BoardTable
 // ─────────────────────────────────────────────────────────────
 
-export default function BoardTable({
+function BoardTable({
     tasks,
     total,
     from,
@@ -2603,3 +2603,5 @@ const styles = {
     } as React.CSSProperties,
     td: { padding: "8px 8px", verticalAlign: "middle" } as React.CSSProperties,
 };
+
+export default memo(BoardTable);

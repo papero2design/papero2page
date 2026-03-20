@@ -944,7 +944,7 @@ export function TaskDetailModal({
 
     const st = STATUS_STYLE[currentStatus] ?? STATUS_STYLE["작업중"];
 
-    const viewFields = [
+    type viewFields = [
         { label: "주문경로", value: task.order_source },
         { label: "고객이름", value: task.customer_name },
         { label: "주문방법", value: task.order_method },

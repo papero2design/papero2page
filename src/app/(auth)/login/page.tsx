@@ -1,7 +1,7 @@
 // src/app/(auth)/login/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import Image from "next/image";
@@ -12,21 +12,20 @@ const LS_SAVE = "login_save";
 
 export default function LoginPage() {
     const router = useRouter();
-    const [saveCredentials, setSaveCredentials] = useState(
-        () => typeof window !== "undefined" && localStorage.getItem(LS_SAVE) === "1",
-    );
-    const [email, setEmail] = useState(
-        () => (typeof window !== "undefined" && localStorage.getItem(LS_SAVE) === "1")
-            ? (localStorage.getItem(LS_EMAIL) ?? "")
-            : "",
-    );
-    const [password, setPassword] = useState(
-        () => (typeof window !== "undefined" && localStorage.getItem(LS_SAVE) === "1")
-            ? (localStorage.getItem(LS_PASSWORD) ?? "")
-            : "",
-    );
+    const [saveCredentials, setSaveCredentials] = useState(false);
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
+
+    // 마운트 후 localStorage에서 저장된 로그인 정보 복원
+    useEffect(() => {
+        if (localStorage.getItem(LS_SAVE) === "1") {
+            setSaveCredentials(true);
+            setEmail(localStorage.getItem(LS_EMAIL) ?? "");
+            setPassword(localStorage.getItem(LS_PASSWORD) ?? "");
+        }
+    }, []);
 
     const handleLogin = async () => {
         if (!email || !password) return;

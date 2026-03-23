@@ -21,6 +21,38 @@ async function assertAdmin() {
     return { supabase, userId: user.id };
 }
 
+// ── 디자이너 목록 + 이메일 조회 (admin client 필요) ──────────────
+export async function fetchDesignersWithEmails() {
+    const { supabase } = await assertAdmin();
+
+    const { data } = await supabase
+        .from("designers")
+        .select("id, name, status, is_active, avatar_url, user_id")
+        .order("name", { ascending: true });
+
+    const designers = data ?? [];
+
+    const emailMap: Record<string, string> = {};
+    const userIds = designers.map((d) => d.user_id).filter(Boolean) as string[];
+    if (userIds.length > 0) {
+        try {
+            const adminClient = createAdminClient();
+            const { data: authData } = await adminClient.auth.admin.listUsers({ perPage: 500 });
+            const userIdSet = new Set(userIds);
+            authData?.users?.forEach((u) => {
+                if (userIdSet.has(u.id) && u.email) emailMap[u.id] = u.email;
+            });
+        } catch (e) {
+            console.error("[fetchDesignersWithEmails] email fetch failed:", e);
+        }
+    }
+
+    return designers.map((d) => ({
+        ...d,
+        email: d.user_id ? (emailMap[d.user_id] ?? "") : "",
+    }));
+}
+
 // ── 디자이너 계정 생성 ────────────────────────────────────────
 export async function createDesignerAccount(data: {
     name: string;

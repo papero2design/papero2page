@@ -7,7 +7,11 @@
       "Bash(find /workspace/o2design -name *.sql -o -name migrations -o -name *schema*)",
       "Bash(find /g/workspace/o2design -type f \\\\\\(-name *.sql -o -name *migration* -o -name *schema* \\\\\\))",
       "Bash(wc -l \"g:\\\\workspace\\\\o2design\\\\src\\\\app\\\\\\(classic\\)\\\\board\\\\BoardTable.tsx\")",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(head -50 \"g:/workspace/o2design/src/app/\\(classic\\)/board/BoardTable.tsx\")",
+      "Bash(find \"g:/workspace/o2design/src/app/\\(classic\\)/board\" -type f -name \"*.tsx\" -o -name \"*.ts\")",
+      "Bash(tail -10 \"g:/workspace/o2design/src/app/\\(classic\\)/board/stats/StatsClient.tsx\")",
+      "Bash(npx tsc:*)"
     ]
   }
 }

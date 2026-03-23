@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Download, CalendarDays, BarChart2, Users } from "lucide-react";
+import { Download, CalendarDays, BarChart2, Users, BarChart3 } from "lucide-react";
 import { useToast } from "../Toast";
 import * as XLSX from "xlsx-js-style"; // 엑셀 파일용 라이브러리
 
@@ -38,12 +38,16 @@ function addDays(d: Date, n: number) {
     return r;
 }
 
-export default function StatsClient({ designers }: { designers: Designer[] }) {
+export default function StatsClient() {
     const today = toYMD(new Date());
 
     const [dateFrom, setDateFrom] = useState(toYMD(addDays(new Date(), -29)));
     const [dateTo, setDateTo] = useState(today);
     const [calMonth, setCalMonth] = useState(() => new Date());
+
+    const [designers, setDesigners] = useState<Designer[]>([]);
+    const [overallCounts, setOverallCounts] = useState({ priority: 0, active: 0, done: 0, trash: 0 });
+    const [overallLoading, setOverallLoading] = useState(true);
 
     const [dayData, setDayData] = useState<DayData[]>([]);
     const [designerStats, setDesignerStats] = useState<DesignerStat[]>([]);
@@ -52,6 +56,25 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
     const { showToast, ToastUI } = useToast();
 
     const supabase = createClient();
+
+    // 전체 현황 + 디자이너 목록 초기 로드
+    useEffect(() => {
+        const fetchOverall = async () => {
+            setOverallLoading(true);
+            const [p, a, d, t, des] = await Promise.all([
+                supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null).neq("status", "완료").eq("is_priority", true),
+                supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null).neq("status", "완료"),
+                supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null).eq("status", "완료"),
+                supabase.from("tasks").select("id", { count: "exact", head: true }).not("deleted_at", "is", null),
+                supabase.from("designers").select("id, name, avatar_url").eq("is_active", true).order("name"),
+            ]);
+            setOverallCounts({ priority: p.count ?? 0, active: a.count ?? 0, done: d.count ?? 0, trash: t.count ?? 0 });
+            setDesigners(des.data ?? []);
+            setOverallLoading(false);
+        };
+        fetchOverall();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const load = async (from: string, to: string) => {
         setLoading(true);
@@ -299,9 +322,49 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
         return idx % 10 === 0;
     };
 
+    function fmtDate(d: Date) {
+        return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
+    }
+
     return (
-        <div className="space-y-6">
+        <div className="max-w-6xl mx-auto px-4 py-8 pb-20">
             {ToastUI}
+            {/* 헤더 */}
+            <div className="mb-8 border-b border-gray-200 pb-6">
+                <h2 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
+                    <BarChart3 className="w-6 h-6 text-gray-700" />
+                    작업 통계 대시보드
+                </h2>
+                <p className="mt-1 text-sm text-gray-500">
+                    {fmtDate(new Date())} 기준 전체 작업 현황
+                </p>
+            </div>
+
+            {/* 전체 현황 카드 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+                {[
+                    { label: "우선작업", value: overallCounts.priority, href: "/board?tab=priority" },
+                    { label: "작업등록", value: overallCounts.active, href: "/board?tab=active" },
+                    { label: "작업완료", value: overallCounts.done, href: "/board?tab=done" },
+                    { label: "휴지통", value: overallCounts.trash, href: "/board/trash" },
+                ].map(({ label, value, href }) => (
+                    <a
+                        key={label}
+                        href={href}
+                        className="p-5 rounded-xl border border-gray-200 bg-white flex flex-col justify-between hover:shadow-md hover:border-gray-300 transition-all cursor-pointer"
+                    >
+                        <div className="flex items-center justify-between mb-4">
+                            <span className="text-sm font-medium text-gray-500">{label}</span>
+                        </div>
+                        <div className="text-3xl font-bold text-gray-900 tracking-tight">
+                            {overallLoading ? "—" : value}
+                        </div>
+                    </a>
+                ))}
+            </div>
+
+            {/* 동적 통계 */}
+            <div className="space-y-6">
             {/* 컨트롤 패널 */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex flex-wrap items-center gap-4">
@@ -658,6 +721,7 @@ export default function StatsClient({ designers }: { designers: Designer[] }) {
                     </div>
                 </div>
             )}
+            </div>
         </div>
     );
 }

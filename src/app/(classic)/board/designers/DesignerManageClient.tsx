@@ -1,10 +1,11 @@
 // src/app/(classic)/board/designers/DesignerManageClient.tsx
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { uploadToR2 } from "@/lib/r2/upload";
 import { useToast } from "../Toast";
 import {
+    fetchDesignersWithEmails,
     createDesignerAccount,
     updateDesigner,
     updateDesignerAvatar,
@@ -1135,24 +1136,34 @@ function DesignerCard({
 }
 
 // ─── 메인 ────────────────────────────────────────────────────
-export default function DesignerManageClient({
-    initialDesigners,
-}: {
-    initialDesigners: Designer[];
-}) {
-    const [designers, setDesigners] = useState<Designer[]>(
-        initialDesigners ?? [],
-    );
+export default function DesignerManageClient() {
+    const [designers, setDesigners] = useState<Designer[]>([]);
+    const [loading, setLoading] = useState(true);
     const [showCreate, setShowCreate] = useState(false);
     const [showInactive, setShowInactive] = useState(false);
 
-    // 서버에서 최신 목록 다시 가져오기
-    const refresh = () => {
-        window.location.reload();
+    const refresh = async () => {
+        setLoading(true);
+        try {
+            const data = await fetchDesignersWithEmails();
+            setDesigners(data);
+        } finally {
+            setLoading(false);
+        }
     };
+
+    useEffect(() => { refresh(); }, []);
 
     const active = designers.filter((d) => d.is_active);
     const inactive = designers.filter((d) => !d.is_active);
+
+    if (loading) {
+        return (
+            <div style={{ textAlign: "center", padding: "60px 0", color: "#9ca3af" }}>
+                불러오는 중...
+            </div>
+        );
+    }
 
     return (
         <>

@@ -1,15 +1,10 @@
 // src/app/(auth)/login/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
 import Image from "next/image";
-
-const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-);
 
 const LS_EMAIL = "login_email";
 const LS_PASSWORD = "login_password";
@@ -17,6 +12,14 @@ const LS_SAVE = "login_save";
 
 export default function LoginPage() {
     const router = useRouter();
+    const supabase = useMemo(
+        () =>
+            createBrowserClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            ),
+        [],
+    );
     const [saveCredentials, setSaveCredentials] = useState(
         () => typeof window !== "undefined" && localStorage.getItem(LS_SAVE) === "1",
     );

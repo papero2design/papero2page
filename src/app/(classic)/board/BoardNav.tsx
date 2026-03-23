@@ -11,12 +11,6 @@ interface Designer {
     avatar_url: string | null;
 }
 
-interface Props {
-    designers: Designer[];
-    isAdmin: boolean;
-    canManage: boolean;
-}
-
 function Badge({ count, bg }: { count: number; bg: string }) {
     if (count === 0) return null;
     return (
@@ -42,26 +36,37 @@ function Badge({ count, bg }: { count: number; bg: string }) {
     );
 }
 
-export default function BoardNav({
-    designers,
-    isAdmin,
-    canManage,
-}: Props) {
+export default function BoardNav() {
     const pathname = usePathname();
     const searchParams = useSearchParams();
 
-    // 클라이언트에서 직접 count fetch
+    // 클라이언트에서 직접 fetch
+    const [designers, setDesigners] = useState<Designer[]>([]);
+    const [isAdmin, setIsAdmin] = useState(false);
+    const [canManage, setCanManage] = useState(false);
     const [counts, setCounts] = useState({ priority: 0, active: 0, done: 0 });
+    const [loaded, setLoaded] = useState(false);
 
     useEffect(() => {
         const supabase = createClient();
 
-        const load = async () => {
-            const [
-                { count: priorityCount },
-                { count: activeCount },
-                { count: doneCount },
-            ] = await Promise.all([
+        const loadAll = async () => {
+            const {
+                data: { user },
+            } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const [profileRes, designersRes, ...countRes] = await Promise.all([
+                supabase
+                    .from("profiles")
+                    .select("role")
+                    .eq("id", user.id)
+                    .single(),
+                supabase
+                    .from("designers")
+                    .select("id, name, avatar_url")
+                    .eq("is_active", true)
+                    .order("name"),
                 supabase
                     .from("tasks")
                     .select("id", { count: "exact", head: true })
@@ -83,19 +88,54 @@ export default function BoardNav({
                     .eq("status", "완료"),
             ]);
 
+            const role = profileRes.data?.role;
+            const admin = role === "admin";
+            const designer = role === "designer";
+            setIsAdmin(admin);
+            setCanManage(admin || designer);
+            setDesigners(designersRes.data ?? []);
             setCounts({
-                priority: priorityCount ?? 0,
-                active: activeCount ?? 0,
-                done: doneCount ?? 0,
+                priority: countRes[0].count ?? 0,
+                active: countRes[1].count ?? 0,
+                done: countRes[2].count ?? 0,
+            });
+            setLoaded(true);
+        };
+
+        loadAll();
+
+        // board-refresh 이벤트 수신 시 count만 갱신
+        const refreshCounts = async () => {
+            const [p, a, d] = await Promise.all([
+                supabase
+                    .from("tasks")
+                    .select("id", { count: "exact", head: true })
+                    .is("deleted_at", null)
+                    .neq("status", "완료")
+                    .eq("is_priority", true)
+                    .is("assigned_designer_id", null),
+                supabase
+                    .from("tasks")
+                    .select("id", { count: "exact", head: true })
+                    .is("deleted_at", null)
+                    .neq("status", "완료")
+                    .eq("is_priority", false)
+                    .is("assigned_designer_id", null),
+                supabase
+                    .from("tasks")
+                    .select("id", { count: "exact", head: true })
+                    .is("deleted_at", null)
+                    .eq("status", "완료"),
+            ]);
+            setCounts({
+                priority: p.count ?? 0,
+                active: a.count ?? 0,
+                done: d.count ?? 0,
             });
         };
 
-        load();
-
-        // board-refresh 이벤트 수신 시 count 갱신
-        const handler = () => load();
-        window.addEventListener("board-refresh", handler);
-        return () => window.removeEventListener("board-refresh", handler);
+        window.addEventListener("board-refresh", refreshCounts);
+        return () => window.removeEventListener("board-refresh", refreshCounts);
     }, []);
 
     const currentTab = searchParams.get("tab") ?? "active";
@@ -125,6 +165,52 @@ export default function BoardNav({
                 ? `${activeColor} border-current`
                 : `text-gray-500 border-transparent ${hoverColor}`
         }`;
+
+    // 로딩 중에는 기본 탭만 표시 (깜빡임 방지)
+    if (!loaded) {
+        return (
+            <div className="w-full">
+                <ul className="flex items-center w-full border-b border-gray-200">
+                    <li className="flex-shrink-0">
+                        <Link
+                            href="/board?tab=priority"
+                            className={tabCls(
+                                "/board?tab=priority",
+                                "text-red-600",
+                                "hover:text-red-500",
+                            )}
+                        >
+                            우선작업
+                        </Link>
+                    </li>
+                    <li className="flex-shrink-0">
+                        <Link
+                            href="/board?tab=active"
+                            className={tabCls(
+                                "/board?tab=active",
+                                "text-gray-900",
+                                "hover:text-gray-800",
+                            )}
+                        >
+                            작업등록
+                        </Link>
+                    </li>
+                    <li className="flex-shrink-0">
+                        <Link
+                            href="/board?tab=done"
+                            className={tabCls(
+                                "/board?tab=done",
+                                "text-blue-600",
+                                "hover:text-blue-500",
+                            )}
+                        >
+                            작업완료
+                        </Link>
+                    </li>
+                </ul>
+            </div>
+        );
+    }
 
     return (
         <div className="w-full">

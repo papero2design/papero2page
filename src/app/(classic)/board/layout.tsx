@@ -1,43 +1,17 @@
 // src/app/(classic)/board/layout.tsx
+// 정적 셸 — 서버 쿼리 없음. 인증은 middleware.ts, 데이터는 각 클라이언트 컴포넌트에서 직접 fetch
 import "./board.css";
+import { Suspense } from "react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import BoardNav from "./BoardNav";
 import Image from "next/image";
 import LogoutButton from "./LogoutButton";
 
-// 기본적으로는 캐시됨. revalidatePath() 사용으로 필요할 때 재검증
-export const revalidate = 60; // 60초마다 재검증
-
-export default async function BoardLayout({
+export default function BoardLayout({
     children,
 }: {
     children: React.ReactNode;
 }) {
-    const supabase = await createClient();
-    const {
-        data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) redirect("/login");
-
-    const { data: profile } = await supabase
-        .from("profiles")
-        .select("role, name")
-        .eq("id", user.id)
-        .single();
-
-    const isAdmin = profile?.role === "admin";
-    const isDesigner = profile?.role === "designer";
-    const canManage = isAdmin || isDesigner;
-
-    // 공통 레이아웃
-    const { data: designers } = await supabase
-        .from("designers")
-        .select("id, name, avatar_url")
-        .eq("is_active", true)
-        .order("name", { ascending: true });
-
     return (
         <div id="wrap">
             <header
@@ -91,11 +65,9 @@ export default async function BoardLayout({
                 <LogoutButton />
             </header>
 
-            <BoardNav
-                designers={designers ?? []}
-                isAdmin={isAdmin}
-                canManage={canManage}
-            />
+            <Suspense>
+                <BoardNav />
+            </Suspense>
 
             <div id="subContainer" className="px-4 pt-5 pb-10">
                 {children}

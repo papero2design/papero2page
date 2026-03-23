@@ -214,8 +214,9 @@ export default function DesignerBoardClient({ designerId }: { designerId: string
     const buildTabUrl = (t: Tab) => {
         const p = new URLSearchParams(searchParams.toString());
         p.set("tab", t);
+        p.set("designer", designerId);
         p.delete("page");
-        return `/board/designers/${designerId}?${p.toString()}`;
+        return `/board?${p.toString()}`;
     };
 
     // 스켈레톤 (초기 로드)

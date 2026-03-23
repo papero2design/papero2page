@@ -165,13 +165,16 @@ export default function BoardNav() {
     };
 
     const currentTab = searchParams.get("tab") ?? "active";
-    const isTabActive = (tab: string) => pathname === "/board" && currentTab === tab;
+    const isTabActive = (tab: string) => pathname === "/board" && currentTab === tab && !searchParams.get("designer");
     const isActive = (href: string) => {
         if (href === "/board?tab=priority") return isTabActive("priority");
         if (href === "/board?tab=done") return isTabActive("done");
-        if (href === "/board?tab=active") return isTabActive("active") || (pathname === "/board" && !searchParams.has("tab"));
+        if (href === "/board?tab=active") return isTabActive("active") || (pathname === "/board" && !searchParams.has("tab") && !searchParams.get("designer"));
         return pathname === href || pathname.startsWith(href + "/");
     };
+    const isDesignerActive = (id: string) =>
+        (pathname === "/board" && searchParams.get("designer") === id) ||
+        pathname === `/board/designers/${id}`;
 
     const base = "flex items-center whitespace-nowrap px-4 py-2 font-semibold border-b-2 transition-colors";
     const tabCls = (href: string, activeColor: string, hoverColor: string) =>
@@ -275,8 +278,10 @@ export default function BoardNav() {
                                         </span>
                                     ) : (
                                         <Link
-                                            href={`/board/designers/${d.id}`}
-                                            className={tabCls(`/board/designers/${d.id}`, "text-blue-600", "hover:text-blue-500") + " shrink-0"}
+                                            href={`/board?designer=${d.id}`}
+                                            className={(isDesignerActive(d.id)
+                                                ? `${base} text-blue-600 border-current`
+                                                : `${base} text-gray-500 border-transparent hover:text-blue-500`) + " shrink-0"}
                                         >
                                             {d.avatar_url ? (
                                                 <img

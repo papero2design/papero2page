@@ -10,6 +10,7 @@ import BoardTable from "./BoardTable";
 import WriteButton from "./WriteButton";
 import FilterBar from "./FilterBar";
 import PaginationClient from "./PaginationClient";
+import DesignerBoardClient from "./designers/[id]/DesignerBoardClient";
 
 const TASK_SELECT =
     "id, task_number, order_source, customer_name, order_method, order_method_note, " +
@@ -22,6 +23,8 @@ const PAGE_SIZE = 15;
 
 export default function BoardClient() {
     const searchParams = useSearchParams();
+    const designerId = searchParams.get("designer");
+
     const [tasks, setTasks] = useState<TaskWithDesigner[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -143,6 +146,11 @@ export default function BoardClient() {
     }, [loadTasks]);
 
     const totalPages = Math.ceil(total / PAGE_SIZE);
+
+    // 디자이너 탭 — searchParams 변경만으로 전환 (라우트 변경 없음)
+    if (designerId) {
+        return <DesignerBoardClient designerId={designerId} />;
+    }
 
     // 스켈레톤 (초기 로드용)
     if (initialLoad) {

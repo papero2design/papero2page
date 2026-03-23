@@ -34,7 +34,11 @@ interface DesignerData {
     banner_color: string | null;
 }
 
-export default function DesignerBoardClient({ designerId }: { designerId: string }) {
+export default function DesignerBoardClient({
+    designerId,
+}: {
+    designerId: string;
+}) {
     const searchParams = useSearchParams();
     const [tasks, setTasks] = useState<TaskWithDesigner[]>([]);
     const [total, setTotal] = useState(0);
@@ -46,15 +50,25 @@ export default function DesignerBoardClient({ designerId }: { designerId: string
     const [isOwn, setIsOwn] = useState(false);
     const [isAdmin, setIsAdmin] = useState(false);
     const [canEditDesigner, setCanEditDesigner] = useState(false);
-    const [allDesigners, setAllDesigners] = useState<{ id: string; name: string }[]>([]);
+    const [allDesigners, setAllDesigners] = useState<
+        { id: string; name: string }[]
+    >([]);
 
     // 탭 카운트
-    const [tabCounts, setTabCounts] = useState({ priority: 0, active: 0, done: 0 });
+    const [tabCounts, setTabCounts] = useState({
+        priority: 0,
+        active: 0,
+        done: 0,
+    });
 
     // searchParams에서 값 읽기
     const tabParam = searchParams.get("tab");
     const tab: Tab =
-        tabParam === "done" ? "done" : tabParam === "active" ? "active" : "priority";
+        tabParam === "done"
+            ? "done"
+            : tabParam === "active"
+              ? "active"
+              : "priority";
     const page = Math.max(1, Number(searchParams.get("page") ?? 1));
     const from = (page - 1) * PAGE_SIZE;
     const q = searchParams.get("q") ?? "";
@@ -85,7 +99,9 @@ export default function DesignerBoardClient({ designerId }: { designerId: string
                     .single(),
                 supabase
                     .from("designers")
-                    .select("id, name, status, avatar_url, user_id, music_title, music_link, banner_color")
+                    .select(
+                        "id, name, status, avatar_url, user_id, music_title, music_link, banner_color",
+                    )
                     .eq("id", designerId)
                     .single(),
                 supabase
@@ -141,10 +157,12 @@ export default function DesignerBoardClient({ designerId }: { designerId: string
             if (q.trim()) query = query.ilike("customer_name", `%${q.trim()}%`);
             if (fMethod) query = query.eq("order_method", fMethod);
             if (fSource) query = query.eq("order_source", fSource);
-            if (fPrint.trim()) query = query.ilike("print_items", `%${fPrint.trim()}%`);
+            if (fPrint.trim())
+                query = query.ilike("print_items", `%${fPrint.trim()}%`);
             if (fPost) query = query.ilike("post_processing", `${fPost}%`);
             if (fConsult) query = query.eq("consult_path", fConsult);
-            if (fDateFrom) query = query.gte("created_at", `${fDateFrom}T00:00:00`);
+            if (fDateFrom)
+                query = query.gte("created_at", `${fDateFrom}T00:00:00`);
             if (fDateTo) query = query.lte("created_at", `${fDateTo}T23:59:59`);
 
             // 작업 목록 + 탭 카운트 동시 조회
@@ -188,8 +206,20 @@ export default function DesignerBoardClient({ designerId }: { designerId: string
             setInitialLoad(false);
         }
     }, [
-        designerId, tab, page, from, q, fMethod, fSource, fPrint,
-        fPost, fConsult, fDateFrom, fDateTo, fSortBy, fSortDir,
+        designerId,
+        tab,
+        page,
+        from,
+        q,
+        fMethod,
+        fSource,
+        fPrint,
+        fPost,
+        fConsult,
+        fDateFrom,
+        fDateTo,
+        fSortBy,
+        fSortDir,
     ]);
 
     useEffect(() => {
@@ -231,7 +261,9 @@ export default function DesignerBoardClient({ designerId }: { designerId: string
                 }}
             >
                 <div style={{ paddingTop: 16, marginBottom: 4 }}>
-                    <p style={{ color: "#9ca3af", margin: 0 }}>불러오는 중...</p>
+                    <p style={{ color: "#9ca3af", margin: 0 }}>
+                        불러오는 중...
+                    </p>
                 </div>
                 <div style={{ marginTop: 16 }}>
                     {Array.from({ length: 6 }).map((_, i) => (
@@ -290,7 +322,11 @@ export default function DesignerBoardClient({ designerId }: { designerId: string
 
             {/* 프로필 패널 */}
             {designer && (
-                <DesignerProfilePanel designer={designer} stats={stats} isOwn={isOwn} />
+                <DesignerProfilePanel
+                    designer={designer}
+                    stats={stats}
+                    isOwn={isOwn}
+                />
             )}
 
             {/* 탭 버튼 */}
@@ -317,7 +353,7 @@ export default function DesignerBoardClient({ designerId }: { designerId: string
                             href={buildTabUrl(key)}
                             style={{
                                 display: "inline-flex",
-                                alignItems: "center",
+                                // alignItems: "center",
                                 gap: 6,
                                 padding: "8px 16px",
                                 fontWeight: 700,
@@ -335,7 +371,7 @@ export default function DesignerBoardClient({ designerId }: { designerId: string
                             <span
                                 style={{
                                     display: "inline-flex",
-                                    alignItems: "center",
+                                    // alignItems: "center",
                                     justifyContent: "center",
                                     minWidth: 20,
                                     height: 20,

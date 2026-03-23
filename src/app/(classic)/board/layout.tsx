@@ -38,32 +38,6 @@ export default async function BoardLayout({
         .eq("is_active", true)
         .order("name", { ascending: true });
 
-    const [
-        { count: priorityCount },
-        { count: activeCount },
-        { count: doneCount },
-    ] = await Promise.all([
-        supabase
-            .from("tasks")
-            .select("id", { count: "exact", head: true })
-            .is("deleted_at", null)
-            .neq("status", "완료")
-            .eq("is_priority", true)
-            .is("assigned_designer_id", null),
-        supabase
-            .from("tasks")
-            .select("id", { count: "exact", head: true })
-            .is("deleted_at", null)
-            .neq("status", "완료")
-            .eq("is_priority", false)
-            .is("assigned_designer_id", null),
-        supabase
-            .from("tasks")
-            .select("id", { count: "exact", head: true })
-            .is("deleted_at", null)
-            .eq("status", "완료"),
-    ]);
-
     return (
         <div id="wrap">
             <header
@@ -121,9 +95,6 @@ export default async function BoardLayout({
                 designers={designers ?? []}
                 isAdmin={isAdmin}
                 canManage={canManage}
-                priorityCount={priorityCount ?? 0}
-                activeCount={activeCount ?? 0}
-                doneCount={doneCount ?? 0}
             />
 
             <div id="subContainer" className="px-4 pt-5 pb-10">

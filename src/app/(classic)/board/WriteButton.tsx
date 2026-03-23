@@ -4,7 +4,11 @@ import { useState } from "react";
 import BoardWriteModal from "./BoardWriteModal";
 import { useRouter } from "next/navigation";
 
-export default function WriteButton() {
+export default function WriteButton({
+    onRefresh,
+}: {
+    onRefresh?: () => void;
+}) {
     const [open, setOpen] = useState(false);
     const router = useRouter();
 
@@ -18,7 +22,8 @@ export default function WriteButton() {
                 onClose={() => setOpen(false)}
                 onSuccess={() => {
                     setOpen(false);
-                    router.refresh();
+                    if (onRefresh) onRefresh();
+                    else router.refresh();
                 }}
             />
         </>

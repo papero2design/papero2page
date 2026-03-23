@@ -40,6 +40,7 @@ interface Props {
     designers?: { id: string; name: string }[];
     writeButton?: React.ReactNode;
     canEditDesigner?: boolean;
+    onMutate?: () => void;
 }
 
 const ORDER_SOURCES = ["홈페이지", "스토어팜"];
@@ -660,12 +661,14 @@ export function TaskDetailModal({
     onDeleted,
     designers = [],
     canEditDesigner = false,
+    onMutate,
 }: {
     task: TaskWithDesigner;
     onClose: () => void;
     onDeleted: () => void;
     designers?: { id: string; name: string }[];
     canEditDesigner?: boolean;
+    onMutate?: () => void;
 }) {
     const [currentStatus, setCurrentStatus] = useState<Status>(
         (STATUSES as readonly string[]).includes(task.status)
@@ -757,6 +760,7 @@ export function TaskDetailModal({
                     reason,
                 );
                 setCurrentStatus(newStatus);
+                onMutate?.();
             } catch (err) {
                 showToast("상태 변경 실패: " + (err as Error).message);
             }
@@ -771,6 +775,7 @@ export function TaskDetailModal({
                 await togglePriority(task.id, newVal, reason);
                 setCurrentPriority(newVal);
                 set("is_priority", newVal);
+                onMutate?.();
             } catch (err) {
                 showToast("우선작업 변경 실패: " + (err as Error).message);
             }
@@ -924,6 +929,7 @@ export function TaskDetailModal({
                     form.edit_reason.trim() || null,
                 );
                 onClose();
+                onMutate?.();
             } catch (err) {
                 showToast("수정 실패: " + (err as Error).message);
             }
@@ -936,6 +942,7 @@ export function TaskDetailModal({
             try {
                 await deleteTask(task.id, "목록에서 삭제");
                 onDeleted();
+                onMutate?.();
             } catch (err) {
                 showToast("삭제 실패: " + (err as Error).message);
             }
@@ -1940,6 +1947,7 @@ function BoardTable({
     designers = [],
     writeButton,
     canEditDesigner = false,
+    onMutate,
 }: Props) {
     const [checked, setChecked] = useState<Set<string>>(new Set());
     const [modalTask, setModalTask] = useState<TaskWithDesigner | null>(null);
@@ -1967,6 +1975,7 @@ function BoardTable({
             try {
                 await deleteTasks(Array.from(checked), "선택삭제");
                 setChecked(new Set());
+                onMutate?.();
             } catch (err) {
                 showToast("선택삭제 실패: " + (err as Error).message);
             }
@@ -2029,6 +2038,7 @@ function BoardTable({
                                             designerName,
                                         );
                                         setChecked(new Set());
+                                        onMutate?.();
                                     } catch (err) {
                                         showToast(
                                             "일괄 변경 실패: " +
@@ -2383,6 +2393,7 @@ function BoardTable({
                     onDeleted={() => setModalTask(null)}
                     designers={designers}
                     canEditDesigner={canEditDesigner}
+                    onMutate={onMutate}
                 />
             )}
         </>

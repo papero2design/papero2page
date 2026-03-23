@@ -1,7 +1,9 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 interface Designer {
     id: string;
@@ -11,11 +13,8 @@ interface Designer {
 
 interface Props {
     designers: Designer[];
-    isAdmin: boolean;      // 통계 탭 표시 여부 (admin 전용)
-    canManage: boolean;    // 디자이너탭/관리/휴지통 표시 여부 (admin + designer)
-    priorityCount?: number;
-    activeCount?: number;
-    doneCount?: number;
+    isAdmin: boolean;
+    canManage: boolean;
 }
 
 function Badge({ count, bg }: { count: number; bg: string }) {
@@ -47,15 +46,58 @@ export default function BoardNav({
     designers,
     isAdmin,
     canManage,
-    priorityCount = 0,
-    activeCount = 0,
-    doneCount = 0,
 }: Props) {
     const pathname = usePathname();
     const searchParams = useSearchParams();
 
-    // /board 페이지에서는 tab 파라미터로 활성 판단
-    // 다른 경로(/designers/[id], /trash 등)는 pathname으로 판단
+    // 클라이언트에서 직접 count fetch
+    const [counts, setCounts] = useState({ priority: 0, active: 0, done: 0 });
+
+    useEffect(() => {
+        const supabase = createClient();
+
+        const load = async () => {
+            const [
+                { count: priorityCount },
+                { count: activeCount },
+                { count: doneCount },
+            ] = await Promise.all([
+                supabase
+                    .from("tasks")
+                    .select("id", { count: "exact", head: true })
+                    .is("deleted_at", null)
+                    .neq("status", "완료")
+                    .eq("is_priority", true)
+                    .is("assigned_designer_id", null),
+                supabase
+                    .from("tasks")
+                    .select("id", { count: "exact", head: true })
+                    .is("deleted_at", null)
+                    .neq("status", "완료")
+                    .eq("is_priority", false)
+                    .is("assigned_designer_id", null),
+                supabase
+                    .from("tasks")
+                    .select("id", { count: "exact", head: true })
+                    .is("deleted_at", null)
+                    .eq("status", "완료"),
+            ]);
+
+            setCounts({
+                priority: priorityCount ?? 0,
+                active: activeCount ?? 0,
+                done: doneCount ?? 0,
+            });
+        };
+
+        load();
+
+        // board-refresh 이벤트 수신 시 count 갱신
+        const handler = () => load();
+        window.addEventListener("board-refresh", handler);
+        return () => window.removeEventListener("board-refresh", handler);
+    }, []);
+
     const currentTab = searchParams.get("tab") ?? "active";
 
     const isTabActive = (tab: string) =>
@@ -71,7 +113,6 @@ export default function BoardNav({
         if (href === "/board?tab=active") {
             return isTabActive("active") || (pathname === "/board" && !searchParams.has("tab"));
         }
-        // 다른 경로는 기존 pathname 방식
         return pathname === href || pathname.startsWith(href + "/");
     };
 
@@ -99,7 +140,7 @@ export default function BoardNav({
                         )}
                     >
                         우선작업
-                        <Badge count={priorityCount} bg="#ef4444" />
+                        <Badge count={counts.priority} bg="#ef4444" />
                     </Link>
                 </li>
 
@@ -114,7 +155,7 @@ export default function BoardNav({
                         )}
                     >
                         작업등록
-                        <Badge count={activeCount} bg="#6b7280" />
+                        <Badge count={counts.active} bg="#6b7280" />
                     </Link>
                 </li>
 
@@ -136,7 +177,6 @@ export default function BoardNav({
                         }}
                     >
                         <div className="flex items-center">
-                            {/* 디자이너 개별 탭 */}
                             {designers.map((d) => (
                                 <Link
                                     key={d.id}

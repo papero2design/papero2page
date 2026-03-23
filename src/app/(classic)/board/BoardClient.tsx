@@ -20,18 +20,44 @@ const TASK_SELECT =
 
 const PAGE_SIZE = 15;
 
-interface Props {
-    isAdmin: boolean;
-    isDesigner: boolean;
-    designers: { id: string; name: string }[];
-}
-
-export default function BoardClient({ isAdmin, isDesigner, designers }: Props) {
+export default function BoardClient() {
     const searchParams = useSearchParams();
     const [tasks, setTasks] = useState<TaskWithDesigner[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
     const [initialLoad, setInitialLoad] = useState(true);
+
+    // 클라이언트에서 직접 조회하는 role/designers
+    const [isAdmin, setIsAdmin] = useState(false);
+    const [isDesigner, setIsDesigner] = useState(false);
+    const [designers, setDesigners] = useState<{ id: string; name: string }[]>([]);
+
+    // 초기 마운트 시 role + designers 조회 (1회)
+    useEffect(() => {
+        const supabase = createClient();
+        const load = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const [profileRes, designersRes] = await Promise.all([
+                supabase
+                    .from("profiles")
+                    .select("role")
+                    .eq("id", user.id)
+                    .single(),
+                supabase
+                    .from("designers")
+                    .select("id, name")
+                    .eq("is_active", true)
+                    .order("name"),
+            ]);
+
+            setIsAdmin(profileRes.data?.role === "admin");
+            setIsDesigner(profileRes.data?.role === "designer");
+            setDesigners(designersRes.data ?? []);
+        };
+        load();
+    }, []);
 
     // searchParams에서 값 읽기
     const tab = searchParams.get("tab") ?? "active";

@@ -1,34 +1,8 @@
 // src/app/(classic)/board/page.tsx
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+// 서버 쿼리 없음 — 탭 이동 시 서버 왕복 제거
+// 인증은 layout.tsx에서 처리, 데이터는 BoardClient에서 클라이언트 직접 조회
 import BoardClient from "./BoardClient";
 
-export default async function BoardPage() {
-    const supabase = await createClient();
-    const {
-        data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) redirect("/login");
-
-    const { data: profileData } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single();
-    const isAdmin = profileData?.role === "admin";
-    const isDesigner = profileData?.role === "designer";
-
-    const { data: designers } = await supabase
-        .from("designers")
-        .select("id, name")
-        .eq("is_active", true)
-        .order("name");
-
-    return (
-        <BoardClient
-            isAdmin={isAdmin}
-            isDesigner={isDesigner}
-            designers={designers ?? []}
-        />
-    );
+export default function BoardPage() {
+    return <BoardClient />;
 }

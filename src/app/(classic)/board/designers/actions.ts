@@ -21,24 +21,6 @@ async function assertAdmin() {
     return { supabase, userId: user.id };
 }
 
-// ── 이메일만 조회 (admin client 필요 — user_id 목록으로 email 매핑) ──────────
-export async function fetchEmailsByUserIds(userIds: string[]): Promise<Record<string, string>> {
-    if (!userIds.length) return {};
-    await assertAdmin();
-    const emailMap: Record<string, string> = {};
-    try {
-        const adminClient = createAdminClient();
-        const { data } = await adminClient.auth.admin.listUsers({ perPage: 500 });
-        const userIdSet = new Set(userIds);
-        data?.users?.forEach((u) => {
-            if (userIdSet.has(u.id) && u.email) emailMap[u.id] = u.email;
-        });
-    } catch (e) {
-        console.error("[fetchEmailsByUserIds] failed:", e);
-    }
-    return emailMap;
-}
-
 // ── 디자이너 계정 생성 ────────────────────────────────────────
 export async function createDesignerAccount(data: {
     name: string;
@@ -80,12 +62,13 @@ export async function createDesignerAccount(data: {
     if (profileError)
         throw new Error(`프로필 생성 실패: ${profileError.message}`);
 
-    // 3. designers 테이블에 추가 (user_id 연결)
+    // 3. designers 테이블에 추가 (user_id + email 함께 저장)
     const { error: designerError } = await adminClient
         .from("designers")
         .insert({
             name: data.name,
             user_id: newUserId,
+            email: data.email,
             is_active: true,
             status: data.status,
         });
@@ -259,10 +242,10 @@ export async function linkDesignerAccount(
     if (profileError)
         throw new Error(`프로필 생성 실패: ${profileError.message}`);
 
-    // 3. designers.user_id 업데이트
+    // 3. designers.user_id + email 업데이트
     const { error: linkError } = await adminClient
         .from("designers")
-        .update({ user_id: newUserId })
+        .update({ user_id: newUserId, email: data.email })
         .eq("id", designerId);
     if (linkError) throw new Error(`계정 연결 실패: ${linkError.message}`);
 
@@ -318,14 +301,13 @@ export async function changeDesignerEmail(userId: string, newEmail: string) {
     });
 
     if (error) {
-        // auth user가 존재하지 않으면 designers.user_id를 초기화
         if (
             error.message.toLowerCase().includes("user not found") ||
             error.status === 404
         ) {
             await adminClient
                 .from("designers")
-                .update({ user_id: null })
+                .update({ user_id: null, email: null })
                 .eq("user_id", userId);
             revalidatePath("/board/designers");
             throw new Error(
@@ -334,6 +316,12 @@ export async function changeDesignerEmail(userId: string, newEmail: string) {
         }
         throw new Error(`계정 변경 실패: ${error.message}`);
     }
+
+    // designers.email도 동기화
+    await adminClient
+        .from("designers")
+        .update({ email: newEmail })
+        .eq("user_id", userId);
 
     revalidatePath("/board/designers");
 }

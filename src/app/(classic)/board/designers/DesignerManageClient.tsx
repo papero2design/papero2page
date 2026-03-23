@@ -6,7 +6,6 @@ import { uploadToR2 } from "@/lib/r2/upload";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "../Toast";
 import {
-    fetchEmailsByUserIds,
     createDesignerAccount,
     updateDesigner,
     updateDesignerAvatar,
@@ -1146,28 +1145,14 @@ export default function DesignerManageClient() {
     const refresh = async () => {
         setLoading(true);
         try {
-            // 1단계: 브라우저 → Supabase 직접 (즉시 표시)
+            // 브라우저 → Supabase 직접 (email 컬럼 포함)
             const supabase = createClient();
             const { data } = await supabase
                 .from("designers")
-                .select("id, name, status, is_active, avatar_url, user_id")
+                .select("id, name, status, is_active, avatar_url, user_id, email")
                 .order("name", { ascending: true });
-            const raw = (data ?? []).map((d) => ({ ...d, email: "" }));
-            setDesigners(raw);
-            setLoading(false);
-
-            // 2단계: 이메일만 서버 액션으로 비동기 보완
-            const userIds = raw.map((d) => d.user_id).filter(Boolean) as string[];
-            if (userIds.length > 0) {
-                const emailMap = await fetchEmailsByUserIds(userIds);
-                setDesigners((prev) =>
-                    prev.map((d) => ({
-                        ...d,
-                        email: d.user_id ? (emailMap[d.user_id] ?? "") : "",
-                    }))
-                );
-            }
-        } catch {
+            setDesigners((data ?? []).map((d) => ({ ...d, email: d.email ?? "" })));
+        } finally {
             setLoading(false);
         }
     };

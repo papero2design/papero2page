@@ -100,6 +100,17 @@ export default function DesignerBoardClient({
         if (allDesignersProp) setAllDesigners(allDesignersProp);
     }, [allDesignersProp]);
 
+    // 디자이너 정보 재조회 (프로필 수정 후 호출)
+    const reloadDesigner = useCallback(async () => {
+        const supabase = createClient();
+        const { data: d } = await supabase
+            .from("designers")
+            .select("id, name, status, avatar_url, user_id, music_title, music_link, banner_color")
+            .eq("id", designerId)
+            .single();
+        if (d) setDesigner(d as DesignerData);
+    }, [designerId]);
+
     // 디자이너 정보 조회 — role/allDesigners는 props로 받으므로 생략
     useEffect(() => {
         const supabase = createClient();
@@ -347,6 +358,7 @@ export default function DesignerBoardClient({
                     designer={designer}
                     stats={stats}
                     isOwn={isOwn}
+                    onRefresh={reloadDesigner}
                 />
             )}
 

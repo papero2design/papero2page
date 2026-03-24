@@ -141,9 +141,13 @@ export default function BoardNav() {
     };
     const saveOrderToDB = async (order: string[]) => {
         const supabase = createClient();
-        await supabase
+        const { error } = await supabase
             .from("app_settings")
-            .upsert({ key: "designer_tab_order", value: order, updated_at: new Date().toISOString() });
+            .upsert(
+                { key: "designer_tab_order", value: order, updated_at: new Date().toISOString() },
+                { onConflict: "key" },
+            );
+        if (error) console.error("[saveOrderToDB]", error.message);
         try { localStorage.setItem(TAB_ORDER_KEY, JSON.stringify(order)); } catch {}
     };
 
@@ -176,7 +180,10 @@ export default function BoardNav() {
         const supabase = createClient();
         await supabase
             .from("app_settings")
-            .upsert({ key: "designer_tab_order", value: [], updated_at: new Date().toISOString() });
+            .upsert(
+                { key: "designer_tab_order", value: [], updated_at: new Date().toISOString() },
+                { onConflict: "key" },
+            );
     };
 
     const currentTab = searchParams.get("tab") ?? "active";

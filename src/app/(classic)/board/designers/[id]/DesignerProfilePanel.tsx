@@ -433,10 +433,12 @@ export default function DesignerProfilePanel({
     designer,
     stats,
     isOwn,
+    onRefresh,
 }: {
     designer: Designer;
     stats: Stats;
     isOwn: boolean;
+    onRefresh?: () => void;
 }) {
     const [editing, setEditing] = useState(false);
     const [form, setForm] = useState({
@@ -461,6 +463,7 @@ export default function DesignerProfilePanel({
         try {
             const { publicUrl } = await uploadToR2("avatars", file);
             await updateMyAvatar(designer.id, publicUrl);
+            onRefresh?.();
         } catch (err) {
             showToast("업로드 실패: " + (err as Error).message);
         } finally {
@@ -485,6 +488,7 @@ export default function DesignerProfilePanel({
                     });
                 }
                 setEditing(false);
+                onRefresh?.();
             } catch (err) {
                 showToast((err as Error).message);
             }

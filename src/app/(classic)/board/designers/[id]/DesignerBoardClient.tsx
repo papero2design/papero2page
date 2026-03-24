@@ -208,7 +208,7 @@ export default function DesignerBoardClient({
     }, [
         designerId,
         tab,
-        page,
+        // page,
         from,
         q,
         fMethod,

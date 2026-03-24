@@ -3,8 +3,8 @@ import "./globals.css";
 import ThemeRegistry from "@/components/common/ThemeRegistry";
 
 export const metadata: Metadata = {
-    title: "O2Design",
-    description: "디자인 작업 관리 시스템",
+    title: "우리 디자인을 부탁해",
+    description: "O2 Design 작업 관리 대시보드",
 };
 
 export default function RootLayout({

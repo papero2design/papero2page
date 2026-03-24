@@ -371,7 +371,7 @@ export default function DesignerBoardClient({
                             <span
                                 style={{
                                     display: "inline-flex",
-                                    // alignItems: "center",
+                                    alignItems: "center",
                                     justifyContent: "center",
                                     minWidth: 20,
                                     height: 20,

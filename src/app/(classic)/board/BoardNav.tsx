@@ -75,9 +75,10 @@ export default function BoardNav() {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
-            const [profileRes, designersRes, ...countRes] = await Promise.all([
+            const [profileRes, designersRes, settingRes, ...countRes] = await Promise.all([
                 supabase.from("profiles").select("role").eq("id", user.id).single(),
                 supabase.from("designers").select("id, name, avatar_url").eq("is_active", true).order("name"),
+                supabase.from("app_settings").select("value").eq("key", "designer_tab_order").single(),
                 supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null).neq("status", "완료").eq("is_priority", true).is("assigned_designer_id", null),
                 supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null).neq("status", "완료").eq("is_priority", false).is("assigned_designer_id", null),
                 supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null).eq("status", "완료"),
@@ -90,17 +91,20 @@ export default function BoardNav() {
             setCanManage(admin || designer);
 
             const raw = designersRes.data ?? [];
-            // localStorage에서 순서 복원
-            try {
-                const saved = localStorage.getItem(TAB_ORDER_KEY);
-                if (saved) {
-                    const order: string[] = JSON.parse(saved);
-                    setTabOrder(order);
-                    setDesigners(applyOrder(raw, order));
-                } else {
-                    setDesigners(raw);
-                }
-            } catch {
+            // DB 순서 우선, 없으면 localStorage 폴백
+            const dbOrder: string[] = settingRes.data?.value ?? [];
+            const order = dbOrder.length > 0 ? dbOrder : (() => {
+                try {
+                    const saved = localStorage.getItem(TAB_ORDER_KEY);
+                    return saved ? (JSON.parse(saved) as string[]) : [];
+                } catch { return []; }
+            })();
+
+            if (order.length > 0) {
+                setTabOrder(order);
+                setDesigners(applyOrder(raw, order));
+                try { localStorage.setItem(TAB_ORDER_KEY, JSON.stringify(order)); } catch {}
+            } else {
                 setDesigners(raw);
             }
 
@@ -135,6 +139,14 @@ export default function BoardNav() {
         e.preventDefault();
         setDragOver(index);
     };
+    const saveOrderToDB = async (order: string[]) => {
+        const supabase = createClient();
+        await supabase
+            .from("app_settings")
+            .upsert({ key: "designer_tab_order", value: order, updated_at: new Date().toISOString() });
+        try { localStorage.setItem(TAB_ORDER_KEY, JSON.stringify(order)); } catch {}
+    };
+
     const handleDrop = (index: number) => {
         const from = dragIndexRef.current;
         if (from === null || from === index) {
@@ -148,7 +160,7 @@ export default function BoardNav() {
         setDesigners(next);
         const order = next.map((d) => d.id);
         setTabOrder(order);
-        try { localStorage.setItem(TAB_ORDER_KEY, JSON.stringify(order)); } catch {}
+        saveOrderToDB(order);
         setDragOver(null);
         dragIndexRef.current = null;
     };
@@ -157,11 +169,14 @@ export default function BoardNav() {
         dragIndexRef.current = null;
     };
 
-    const resetOrder = () => {
+    const resetOrder = async () => {
         try { localStorage.removeItem(TAB_ORDER_KEY); } catch {}
         setTabOrder([]);
-        // 이름순 정렬
         setDesigners((prev) => [...prev].sort((a, b) => a.name.localeCompare(b.name)));
+        const supabase = createClient();
+        await supabase
+            .from("app_settings")
+            .upsert({ key: "designer_tab_order", value: [], updated_at: new Date().toISOString() });
     };
 
     const currentTab = searchParams.get("tab") ?? "active";

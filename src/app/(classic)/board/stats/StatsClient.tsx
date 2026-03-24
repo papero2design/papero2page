@@ -20,6 +20,28 @@ type DesignerStat = {
     total: number;
     priority: number;
     normal: number;
+    byMethod: Record<string, number>;
+};
+
+const ORDER_METHODS = [
+    "샘플디자인 의뢰",
+    "재주문(글자수정)",
+    "인쇄만",
+    "재주문(수정X)",
+    "디자인 복원",
+    "신규 디자인",
+    "디자인 수정",
+    "기타",
+];
+const METHOD_COLORS: Record<string, string> = {
+    "샘플디자인 의뢰": "#3B82F6",
+    "재주문(글자수정)": "#1ED67D",
+    "인쇄만": "#F97316",
+    "재주문(수정X)": "#A78BFA",
+    "디자인 복원": "#F59E0B",
+    "신규 디자인": "#06B6D4",
+    "디자인 수정": "#EC4899",
+    "기타": "#9CA3AF",
 };
 
 const PRESETS = [
@@ -83,7 +105,7 @@ export default function StatsClient() {
             const { data } = await supabase
                 .from("tasks")
                 .select(
-                    "id, completed_at, assigned_designer_id, is_priority",
+                    "id, completed_at, assigned_designer_id, is_priority, order_method",
                 )
                 .eq("status", "완료")
                 .is("deleted_at", null)
@@ -129,7 +151,7 @@ export default function StatsClient() {
             // 2. 디자이너별 세부 집계 — 파라미터로 받은 designerList 사용
             const dMap: Record<string, DesignerStat> = {};
             designerList.forEach((d) => {
-                dMap[d.id] = { ...d, total: 0, priority: 0, normal: 0 };
+                dMap[d.id] = { ...d, total: 0, priority: 0, normal: 0, byMethod: {} };
             });
 
             rows.forEach((r) => {
@@ -143,6 +165,8 @@ export default function StatsClient() {
                 } else {
                     stat.normal++;
                 }
+                const method = r.order_method ?? "기타";
+                stat.byMethod[method] = (stat.byMethod[method] ?? 0) + 1;
             });
 
             const dStats = Object.values(dMap).sort(
@@ -638,15 +662,16 @@ export default function StatsClient() {
                                 디자이너별 완료 성과
                             </h3>
                         </div>
-                        <div className="flex items-center gap-4 text-xs font-medium text-gray-500">
-                            <div className="flex items-center gap-1.5">
-                                <div className="w-2.5 h-2.5 rounded-sm bg-gray-900"></div>
-                                우선작업
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                                <div className="w-2.5 h-2.5 rounded-sm bg-[#1ED67D]"></div>
-                                일반작업
-                            </div>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-medium text-gray-500">
+                            {ORDER_METHODS.map((m) => (
+                                <div key={m} className="flex items-center gap-1.5">
+                                    <div
+                                        className="w-2.5 h-2.5 rounded-sm"
+                                        style={{ backgroundColor: METHOD_COLORS[m] }}
+                                    />
+                                    {m}
+                                </div>
+                            ))}
                         </div>
                     </div>
 
@@ -672,34 +697,41 @@ export default function StatsClient() {
 
                                 <div className="flex-1 h-5 flex items-center group relative cursor-pointer">
                                     <div
-                                        className="h-full flex rounded-sm overflow-hidden w-full"
+                                        className="h-full flex rounded-sm overflow-hidden"
                                         style={{
                                             width: `${d.total > 0 ? Math.max(2, (d.total / maxDesigner) * 100) : 0}%`,
                                         }}
                                     >
-                                        {d.priority > 0 && (
-                                            <div
-                                                className="bg-gray-900 h-full transition-all"
-                                                style={{
-                                                    width: `${(d.priority / d.total) * 100}%`,
-                                                }}
-                                            />
-                                        )}
-                                        {d.normal > 0 && (
-                                            <div
-                                                className="bg-[#1ED67D] h-full transition-all"
-                                                style={{
-                                                    width: `${(d.normal / d.total) * 100}%`,
-                                                }}
-                                            />
-                                        )}
+                                        {ORDER_METHODS.map((m) => {
+                                            const count = d.byMethod[m] ?? 0;
+                                            if (count === 0) return null;
+                                            return (
+                                                <div
+                                                    key={m}
+                                                    className="h-full transition-all"
+                                                    style={{
+                                                        width: `${(count / d.total) * 100}%`,
+                                                        backgroundColor: METHOD_COLORS[m],
+                                                    }}
+                                                />
+                                            );
+                                        })}
+                                        {Object.entries(d.byMethod)
+                                            .filter(([m]) => !ORDER_METHODS.includes(m))
+                                            .map(([m, count]) => (
+                                                <div
+                                                    key={m}
+                                                    className="h-full transition-all bg-gray-400"
+                                                    style={{ width: `${(count / d.total) * 100}%` }}
+                                                />
+                                            ))}
                                     </div>
                                     <span className="text-gray-900 text-sm font-semibold ml-3 w-8 shrink-0">
                                         {d.total > 0 ? `${d.total}건` : "0건"}
                                     </span>
 
                                     {d.total > 0 && (
-                                        <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/4 bg-gray-900 text-white text-[11px] p-2.5 rounded-lg shadow-xl transition-opacity whitespace-nowrap z-50 pointer-events-none min-w-[100px]">
+                                        <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/4 bg-gray-900 text-white text-[11px] p-2.5 rounded-lg shadow-xl transition-opacity whitespace-nowrap z-50 pointer-events-none min-w-[140px]">
                                             <div className="font-bold border-b border-gray-700 pb-1.5 mb-1.5 text-center">
                                                 {d.name}{" "}
                                                 <span className="text-[#1ED67D]">
@@ -707,18 +739,30 @@ export default function StatsClient() {
                                                 </span>
                                             </div>
                                             <div className="flex flex-col gap-1 text-gray-300">
-                                                <div className="flex justify-between gap-3">
-                                                    <span>우선작업</span>{" "}
-                                                    <span className="font-medium text-white">
-                                                        {d.priority}건
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between gap-3">
-                                                    <span>일반작업</span>{" "}
-                                                    <span className="font-medium text-[#1ED67D]">
-                                                        {d.normal}건
-                                                    </span>
-                                                </div>
+                                                {ORDER_METHODS.map((m) => {
+                                                    const count = d.byMethod[m] ?? 0;
+                                                    if (count === 0) return null;
+                                                    return (
+                                                        <div key={m} className="flex justify-between gap-3">
+                                                            <span className="flex items-center gap-1.5">
+                                                                <span
+                                                                    className="inline-block w-2 h-2 rounded-sm shrink-0"
+                                                                    style={{ backgroundColor: METHOD_COLORS[m] }}
+                                                                />
+                                                                {m}
+                                                            </span>
+                                                            <span className="font-medium text-white">{count}건</span>
+                                                        </div>
+                                                    );
+                                                })}
+                                                {Object.entries(d.byMethod)
+                                                    .filter(([m]) => !ORDER_METHODS.includes(m))
+                                                    .map(([m, count]) => (
+                                                        <div key={m} className="flex justify-between gap-3">
+                                                            <span>{m}</span>
+                                                            <span className="font-medium text-white">{count}건</span>
+                                                        </div>
+                                                    ))}
                                             </div>
                                             <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-gray-900"></div>
                                         </div>

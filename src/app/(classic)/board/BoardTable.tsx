@@ -2,17 +2,17 @@
 
 import { useState, useTransition, useEffect, useCallback, useRef, memo } from "react";
 import { TaskWithDesigner } from "@/types/database";
+import { deleteTaskFile } from "./actions";
 import {
-    updateTask,
-    updateTaskStatus,
-    getTaskLogs,
-    deleteTask,
-    deleteTasks,
-    bulkUpdateDesigner,
-    togglePriority,
-    deleteTaskFile,
+    clientUpdateTask,
+    clientUpdateTaskStatus,
+    clientGetTaskLogs,
+    clientDeleteTask,
+    clientDeleteTasks,
+    clientBulkUpdateDesigner,
+    clientTogglePriority,
     type LogEntry,
-} from "./actions";
+} from "./clientMutations";
 import { createClient } from "@/lib/supabase/client";
 import { uploadToR2, deleteFromR2 } from "@/lib/r2/upload";
 import FileUploadField, { type ExistingFile } from "./FileUploadField";
@@ -288,7 +288,7 @@ function LogTimeline({ taskId }: { taskId: string }) {
         setLoading(true);
         setErrMsg(null);
         try {
-            setLogs(await getTaskLogs(taskId));
+            setLogs(await clientGetTaskLogs(taskId));
         } catch (err) {
             setErrMsg((err as Error).message);
         } finally {
@@ -752,7 +752,7 @@ export function TaskDetailModal({
                         : currentStatus === "완료"
                           ? null
                           : undefined;
-                await updateTaskStatus(
+                await clientUpdateTaskStatus(
                     task.id,
                     currentStatus,
                     newStatus,
@@ -772,7 +772,7 @@ export function TaskDetailModal({
         setPriorityModal(false);
         startTransition(async () => {
             try {
-                await togglePriority(task.id, newVal, reason);
+                await clientTogglePriority(task.id, newVal, reason);
                 setCurrentPriority(newVal);
                 set("is_priority", newVal);
                 onMutate?.();
@@ -904,7 +904,7 @@ export function TaskDetailModal({
                     },
                 ];
 
-                await updateTask(
+                await clientUpdateTask(
                     task.id,
                     {
                         order_source: form.order_source,
@@ -940,7 +940,7 @@ export function TaskDetailModal({
         setDeleteConfirm(false);
         startTransition(async () => {
             try {
-                await deleteTask(task.id, "목록에서 삭제");
+                await clientDeleteTask(task.id, "목록에서 삭제");
                 onDeleted();
                 onMutate?.();
             } catch (err) {
@@ -1973,7 +1973,7 @@ function BoardTable({
         setBulkDeleteConfirm(false);
         startTransition(async () => {
             try {
-                await deleteTasks(Array.from(checked), "선택삭제");
+                await clientDeleteTasks(Array.from(checked), "선택삭제");
                 setChecked(new Set());
                 onMutate?.();
             } catch (err) {
@@ -2032,10 +2032,16 @@ function BoardTable({
                             onAssign={(designerId, designerName) => {
                                 startTransition(async () => {
                                     try {
-                                        await bulkUpdateDesigner(
+                                        const oldNameMap = new Map(
+                                            tasks
+                                                .filter((t) => checked.has(t.id))
+                                                .map((t) => [t.id, (t.designer as { name: string } | null)?.name ?? null]),
+                                        );
+                                        await clientBulkUpdateDesigner(
                                             Array.from(checked),
                                             designerId,
                                             designerName,
+                                            oldNameMap,
                                         );
                                         setChecked(new Set());
                                         onMutate?.();

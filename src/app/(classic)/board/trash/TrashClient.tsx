@@ -3,7 +3,7 @@
 import { useState, useEffect, useTransition, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { restoreTask, hardDeleteTask } from "../actions";
+import { clientRestoreTask, clientHardDeleteTask } from "../clientMutations";
 import { TaskDetailModal } from "../BoardTable";
 import { type TaskWithDesigner } from "@/types/database";
 import { useToast } from "../Toast";
@@ -118,7 +118,7 @@ export default function TrashClient() {
         setRestoreTarget(null);
         startTransition(async () => {
             try {
-                await restoreTask(task.id);
+                await clientRestoreTask(task.id);
                 setTasks((prev) => prev.filter((t) => t.id !== task.id));
                 if (modalTask?.id === task.id) setModalTask(null);
             } catch (err) {
@@ -131,7 +131,7 @@ export default function TrashClient() {
         setDeleteTarget(null);
         startTransition(async () => {
             try {
-                await hardDeleteTask(task.id);
+                await clientHardDeleteTask(task.id);
                 setTasks((prev) => prev.filter((t) => t.id !== task.id));
                 if (modalTask?.id === task.id) setModalTask(null);
             } catch (err) {

@@ -11,7 +11,8 @@
       "Bash(head -50 \"g:/workspace/o2design/src/app/\\(classic\\)/board/BoardTable.tsx\")",
       "Bash(find \"g:/workspace/o2design/src/app/\\(classic\\)/board\" -type f -name \"*.tsx\" -o -name \"*.ts\")",
       "Bash(tail -10 \"g:/workspace/o2design/src/app/\\(classic\\)/board/stats/StatsClient.tsx\")",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(grep -v \"^$\")"
     ]
   }
 }

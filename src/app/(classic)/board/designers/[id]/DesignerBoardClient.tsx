@@ -34,25 +34,38 @@ interface DesignerData {
     banner_color: string | null;
 }
 
+interface Props {
+    designerId: string;
+    // BoardClient에서 이미 조회한 값을 props로 받으면 재조회 생략
+    isAdmin?: boolean;
+    isDesignerRole?: boolean;
+    currentUserId?: string | null;
+    allDesigners?: { id: string; name: string }[];
+}
+
 export default function DesignerBoardClient({
     designerId,
-}: {
-    designerId: string;
-}) {
+    isAdmin: isAdminProp,
+    isDesignerRole: isDesignerRoleProp,
+    currentUserId: currentUserIdProp,
+    allDesigners: allDesignersProp,
+}: Props) {
     const searchParams = useSearchParams();
     const [tasks, setTasks] = useState<TaskWithDesigner[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
     const [initialLoad, setInitialLoad] = useState(true);
 
-    // 디자이너 정보
+    // props로 받은 경우 즉시 초기화, 없으면 fetch
     const [designer, setDesigner] = useState<DesignerData | null>(null);
     const [isOwn, setIsOwn] = useState(false);
-    const [isAdmin, setIsAdmin] = useState(false);
-    const [canEditDesigner, setCanEditDesigner] = useState(false);
-    const [allDesigners, setAllDesigners] = useState<
-        { id: string; name: string }[]
-    >([]);
+    const [isAdmin, setIsAdmin] = useState(isAdminProp ?? false);
+    const [canEditDesigner, setCanEditDesigner] = useState(
+        (isAdminProp ?? false) || (isDesignerRoleProp ?? false),
+    );
+    const [allDesigners, setAllDesigners] = useState<{ id: string; name: string }[]>(
+        allDesignersProp ?? [],
+    );
 
     // 탭 카운트
     const [tabCounts, setTabCounts] = useState({
@@ -82,51 +95,59 @@ export default function DesignerBoardClient({
     const fSortBy = searchParams.get("sortBy") ?? "";
     const fSortDir = searchParams.get("sortDir") ?? "";
 
-    // 초기 마운트 시 디자이너 정보 + role 조회
+    // props로 받은 경우 allDesigners 동기화 (새 디자이너 추가 등 반영)
+    useEffect(() => {
+        if (allDesignersProp) setAllDesigners(allDesignersProp);
+    }, [allDesignersProp]);
+
+    // 디자이너 정보 조회 — role/allDesigners는 props로 받으므로 생략
     useEffect(() => {
         const supabase = createClient();
         const load = async () => {
-            const {
-                data: { user },
-            } = await supabase.auth.getUser();
-            if (!user) return;
-
-            const [profileRes, designerRes, designersRes] = await Promise.all([
-                supabase
-                    .from("profiles")
-                    .select("role")
-                    .eq("id", user.id)
-                    .single(),
-                supabase
+            if (isAdminProp !== undefined) {
+                // BoardClient에서 role을 이미 알고 있음 → designer 정보 1건만 조회
+                const { data: d } = await supabase
                     .from("designers")
-                    .select(
-                        "id, name, status, avatar_url, user_id, music_title, music_link, banner_color",
-                    )
+                    .select("id, name, status, avatar_url, user_id, music_title, music_link, banner_color")
                     .eq("id", designerId)
-                    .single(),
-                supabase
-                    .from("designers")
-                    .select("id, name")
-                    .eq("is_active", true)
-                    .order("name"),
-            ]);
+                    .single();
+                if (d) {
+                    setDesigner(d as DesignerData);
+                    setIsOwn(
+                        (isDesignerRoleProp ?? false) &&
+                            d.user_id === (currentUserIdProp ?? null),
+                    );
+                }
+            } else {
+                // 단독 접근 시 (직접 URL 등) 모두 조회
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) return;
 
-            const role = profileRes.data?.role;
-            const admin = role === "admin";
-            const isDesignerRole = role === "designer";
-            setIsAdmin(admin);
-            setCanEditDesigner(admin || isDesignerRole);
+                const [profileRes, designerRes, designersRes] = await Promise.all([
+                    supabase.from("profiles").select("role").eq("id", user.id).single(),
+                    supabase
+                        .from("designers")
+                        .select("id, name, status, avatar_url, user_id, music_title, music_link, banner_color")
+                        .eq("id", designerId)
+                        .single(),
+                    supabase.from("designers").select("id, name").eq("is_active", true).order("name"),
+                ]);
 
-            if (designerRes.data) {
-                const d = designerRes.data as DesignerData;
-                setDesigner(d);
-                setIsOwn(isDesignerRole && d.user_id === user.id);
+                const role = profileRes.data?.role;
+                const admin = role === "admin";
+                const isDesignerRole = role === "designer";
+                setIsAdmin(admin);
+                setCanEditDesigner(admin || isDesignerRole);
+                if (designerRes.data) {
+                    const d = designerRes.data as DesignerData;
+                    setDesigner(d);
+                    setIsOwn(isDesignerRole && d.user_id === user.id);
+                }
+                setAllDesigners(designersRes.data ?? []);
             }
-
-            setAllDesigners(designersRes.data ?? []);
         };
         load();
-    }, [designerId]);
+    }, [designerId, isAdminProp, isDesignerRoleProp, currentUserIdProp]);
 
     // 작업 목록 + 탭 카운트 fetch
     const loadTasks = useCallback(async () => {

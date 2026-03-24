@@ -33,6 +33,7 @@ export default function BoardClient() {
     // 클라이언트에서 직접 조회하는 role/designers
     const [isAdmin, setIsAdmin] = useState(false);
     const [isDesigner, setIsDesigner] = useState(false);
+    const [userId, setUserId] = useState<string | null>(null);
     const [designers, setDesigners] = useState<{ id: string; name: string }[]>([]);
 
     // 초기 마운트 시 role + designers 조회 (1회)
@@ -55,6 +56,7 @@ export default function BoardClient() {
                     .order("name"),
             ]);
 
+            setUserId(user.id);
             setIsAdmin(profileRes.data?.role === "admin");
             setIsDesigner(profileRes.data?.role === "designer");
             setDesigners(designersRes.data ?? []);
@@ -149,7 +151,15 @@ export default function BoardClient() {
 
     // 디자이너 탭 — searchParams 변경만으로 전환 (라우트 변경 없음)
     if (designerId) {
-        return <DesignerBoardClient designerId={designerId} />;
+        return (
+            <DesignerBoardClient
+                designerId={designerId}
+                isAdmin={isAdmin}
+                isDesignerRole={isDesigner}
+                currentUserId={userId}
+                allDesigners={designers}
+            />
+        );
     }
 
     // 스켈레톤 (초기 로드용)

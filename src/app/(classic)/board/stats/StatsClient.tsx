@@ -76,7 +76,8 @@ export default function StatsClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const load = async (from: string, to: string) => {
+    // designers를 파라미터로 받아 클로저 race condition 방지
+    const load = async (from: string, to: string, designerList: Designer[]) => {
         setLoading(true);
         try {
             const { data } = await supabase
@@ -125,15 +126,10 @@ export default function StatsClient() {
             }
             setDayData(days);
 
-            // 2. 디자이너별 세부 집계
+            // 2. 디자이너별 세부 집계 — 파라미터로 받은 designerList 사용
             const dMap: Record<string, DesignerStat> = {};
-            designers.forEach((d) => {
-                dMap[d.id] = {
-                    ...d,
-                    total: 0,
-                    priority: 0,
-                    normal: 0,
-                };
+            designerList.forEach((d) => {
+                dMap[d.id] = { ...d, total: 0, priority: 0, normal: 0 };
             });
 
             rows.forEach((r) => {
@@ -158,8 +154,20 @@ export default function StatsClient() {
         }
     };
 
+    // designers 로드 완료 후 첫 통계 조회 (race condition 방지)
     useEffect(() => {
-        load(dateFrom, dateTo);
+        if (designers.length > 0) {
+            load(dateFrom, dateTo, designers);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [designers]);
+
+    // 날짜 변경 시 재조회 (designers가 이미 로드된 경우만)
+    useEffect(() => {
+        if (designers.length > 0) {
+            load(dateFrom, dateTo, designers);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dateFrom, dateTo]);
 
     const setPreset = (days: number) => {

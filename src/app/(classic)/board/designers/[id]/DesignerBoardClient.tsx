@@ -353,7 +353,6 @@ export default function DesignerBoardClient({
                             href={buildTabUrl(key)}
                             style={{
                                 display: "inline-flex",
-                                // alignItems: "center",
                                 gap: 6,
                                 padding: "8px 16px",
                                 fontWeight: 700,

@@ -21,7 +21,7 @@ const TASK_SELECT =
 
 const PAGE_SIZE = 15;
 
-type Tab = "active" | "done" | "priority";
+type Tab = "work" | "done";
 
 interface DesignerData {
     id: string;
@@ -69,19 +69,13 @@ export default function DesignerBoardClient({
 
     // 탭 카운트
     const [tabCounts, setTabCounts] = useState({
-        priority: 0,
-        active: 0,
+        work: 0,
         done: 0,
     });
 
     // searchParams에서 값 읽기
     const tabParam = searchParams.get("tab");
-    const tab: Tab =
-        tabParam === "done"
-            ? "done"
-            : tabParam === "active"
-              ? "active"
-              : "priority";
+    const tab: Tab = tabParam === "done" ? "done" : "work";
     const page = Math.max(1, Number(searchParams.get("page") ?? 1));
     const from = (page - 1) * PAGE_SIZE;
     const q = searchParams.get("q") ?? "";
@@ -174,12 +168,10 @@ export default function DesignerBoardClient({
                 .is("deleted_at", null)
                 .eq("assigned_designer_id", designerId);
 
-            if (tab === "active") {
-                query = query.neq("status", "완료").eq("is_priority", false);
-            } else if (tab === "done") {
+            if (tab === "done") {
                 query = query.eq("status", "완료");
             } else {
-                query = query.neq("status", "완료").eq("is_priority", true);
+                query = query.neq("status", "완료");
             }
 
             query = query
@@ -205,15 +197,7 @@ export default function DesignerBoardClient({
                     .select("id", { count: "exact", head: true })
                     .is("deleted_at", null)
                     .eq("assigned_designer_id", designerId)
-                    .neq("status", "완료")
-                    .eq("is_priority", true),
-                supabase
-                    .from("tasks")
-                    .select("id", { count: "exact", head: true })
-                    .is("deleted_at", null)
-                    .eq("assigned_designer_id", designerId)
-                    .neq("status", "완료")
-                    .eq("is_priority", false),
+                    .neq("status", "완료"),
                 supabase
                     .from("tasks")
                     .select("id", { count: "exact", head: true })
@@ -225,9 +209,8 @@ export default function DesignerBoardClient({
             setTasks((taskResult.data ?? []) as unknown as TaskWithDesigner[]);
             setTotal(taskResult.count ?? 0);
             setTabCounts({
-                priority: countResults[0].count ?? 0,
-                active: countResults[1].count ?? 0,
-                done: countResults[2].count ?? 0,
+                work: countResults[0].count ?? 0,
+                done: countResults[1].count ?? 0,
             });
 
             window.dispatchEvent(new Event("board-refresh"));
@@ -261,15 +244,14 @@ export default function DesignerBoardClient({
     const totalPages = Math.ceil(total / PAGE_SIZE);
 
     const stats = {
-        active: tabCounts.active,
+        active: 0,
         done: tabCounts.done,
-        priority: tabCounts.priority,
+        priority: 0,
         statusMap: {} as Record<string, number>,
     };
 
     const TABS: { key: Tab; label: string; count: number }[] = [
-        { key: "priority", label: "우선작업", count: tabCounts.priority },
-        { key: "active", label: "진행중", count: tabCounts.active },
+        { key: "work", label: "담당작업", count: tabCounts.work },
         { key: "done", label: "완료", count: tabCounts.done },
     ];
 
@@ -375,11 +357,7 @@ export default function DesignerBoardClient({
                 {TABS.map(({ key, label, count }) => {
                     const isActive = tab === key;
                     const color =
-                        key === "priority"
-                            ? "#dc2626"
-                            : key === "done"
-                              ? "#15803d"
-                              : "#111827";
+                        key === "done" ? "#15803d" : "#111827";
                     return (
                         <Link
                             key={key}
@@ -469,6 +447,7 @@ export default function DesignerBoardClient({
                 canEditDesigner={canEditDesigner}
                 writeButton={undefined}
                 onMutate={loadTasks}
+                highlightPriorityRows={tab === "work"}
             />
 
             <PaginationClient page={page} totalPages={totalPages} />

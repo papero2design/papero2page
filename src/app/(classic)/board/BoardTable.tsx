@@ -48,6 +48,7 @@ interface Props {
     writeButton?: React.ReactNode;
     canEditDesigner?: boolean;
     onMutate?: () => void;
+    highlightPriorityRows?: boolean;
 }
 
 const ORDER_SOURCES = ["홈페이지", "스토어팜"];
@@ -55,7 +56,7 @@ const ORDER_METHODS = [
     "샘플디자인 의뢰",
     "재주문(글자수정)",
     "인쇄만 의뢰",
-    "재주문(수정X)",
+    "재주문(수정없는)",
     "디자인 복원",
     "신규 디자인",
     "디자인 수정",
@@ -719,6 +720,7 @@ export function TaskDetailModal({
     const [tab, setTab] = useState<"view" | "edit" | "log">("view");
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [copiedKey, setCopiedKey] = useState<string | null>(null);
+    const [copiedTdKey, setCopiedTdKey] = useState<string | null>(null);
     const [isPending, startTransition] = useTransition();
     const blockCloseRef = useRef(false);
     const [newFiles, setNewFiles] = useState<File[]>([]);
@@ -737,6 +739,7 @@ export function TaskDetailModal({
     }>({ show: false, target: null });
     const [priorityModal, setPriorityModal] = useState(false);
     const [deleteConfirm, setDeleteConfirm] = useState(false);
+    const [completeConfirm, setCompleteConfirm] = useState(false);
 
     const parsedPP = parsePostProc(task.post_processing);
 
@@ -773,9 +776,46 @@ export function TaskDetailModal({
 
     const copyToClipboard = (label: string, value: string) => {
         if (!value || value === "없음" || value === "미배정") return;
-        navigator.clipboard.writeText(value).then(() => {
+        let copyValue = value;
+        // 인쇄항목에 귀도리 포함 시 모서리라운드로 변환
+        // (+귀도리 또는 귀도리 모두 대응)
+        if (copyValue.includes("귀도리")) {
+            const printItems = task.print_items ?? "";
+            const isHeavy =
+                printItems.includes("두꺼운") || printItems.includes("고품격");
+            // +귀도리, 귀도리 모두 대응 (\+? = + 기호 있어도 없어도)
+            copyValue = isHeavy
+                ? copyValue.replace(/\+?귀도리/g, "모서리라운드 6mm")
+                : copyValue.replace(/\+?귀도리/g, "모서리라운드 4mm");
+        }
+        navigator.clipboard.writeText(copyValue).then(() => {
             setCopiedKey(label);
             setTimeout(() => setCopiedKey(null), 1500);
+        });
+    };
+
+    const handleStatusChange = (newStatus: Status) => {
+        if (newStatus === currentStatus) return;
+        startTransition(async () => {
+            try {
+                const completedAt =
+                    newStatus === "완료"
+                        ? new Date().toISOString()
+                        : currentStatus === "완료"
+                          ? null
+                          : undefined;
+                await clientUpdateTaskStatus(
+                    task.id,
+                    currentStatus,
+                    newStatus,
+                    completedAt,
+                    null,
+                );
+                setCurrentStatus(newStatus);
+                onMutate?.();
+            } catch (err) {
+                showToast("상태 변경 실패: " + (err as Error).message);
+            }
         });
     };
 
@@ -816,6 +856,26 @@ export function TaskDetailModal({
                 onMutate?.();
             } catch (err) {
                 showToast("우선작업 변경 실패: " + (err as Error).message);
+            }
+        });
+    };
+
+    const handleComplete = () => {
+        startTransition(async () => {
+            try {
+                const completedAt = new Date().toISOString();
+                await clientUpdateTaskStatus(
+                    task.id,
+                    currentStatus,
+                    "완료",
+                    completedAt,
+                    null,
+                );
+                setCurrentStatus("완료");
+                onMutate?.();
+                onClose();
+            } catch (err) {
+                showToast("상태 변경 실패: " + (err as Error).message);
             }
         });
     };
@@ -1007,6 +1067,10 @@ export function TaskDetailModal({
             label: "처리특이사항",
             value: task.special_details ?? "없음",
             alert: !!task.special_details,
+            link: task.special_details
+                ? (task.special_details.match(/https?:\/\/\S+/)?.[0] ??
+                  undefined)
+                : undefined,
         },
         { label: "담당 디자이너", value: task.designer?.name ?? "미배정" },
         { label: "등록자", value: task.registered_by ?? "—" },
@@ -1027,6 +1091,17 @@ export function TaskDetailModal({
                     danger
                     onConfirm={handleDelete}
                     onCancel={() => setDeleteConfirm(false)}
+                />
+            )}
+            {completeConfirm && (
+                <ConfirmDialog
+                    message={`"${task.customer_name}" 작업을 완료로 이동할까요?`}
+                    confirmLabel="이동"
+                    onConfirm={() => {
+                        setCompleteConfirm(false);
+                        handleComplete();
+                    }}
+                    onCancel={() => setCompleteConfirm(false)}
                 />
             )}
             {statusModal.show && statusModal.target && (
@@ -1232,12 +1307,7 @@ export function TaskDetailModal({
                                         key={s}
                                         type="button"
                                         disabled={isPending}
-                                        onClick={() =>
-                                            setStatusModal({
-                                                show: true,
-                                                target: s,
-                                            })
-                                        }
+                                        onClick={() => handleStatusChange(s)}
                                         style={{
                                             padding: "3px 10px",
                                             borderRadius: 5,
@@ -1308,33 +1378,29 @@ export function TaskDetailModal({
                                         ({ label, value, alert, link }) => {
                                             const isCopied =
                                                 copiedKey === label;
+                                            const isTdCopied =
+                                                copiedTdKey === label;
                                             const canCopy =
                                                 !!value &&
                                                 value !== "없음" &&
                                                 value !== "미배정" &&
                                                 value !== "—" &&
                                                 !link;
+                                            // 주문방법 메모: td 클릭 시 괄호 안 내용만 복사
+                                            const isMemo =
+                                                label === "주문방법 메모";
+                                            const bracketMatch =
+                                                isMemo && value
+                                                    ? value.match(/\(([^)]+)\)/)
+                                                    : null;
+                                            const canCopyBracket =
+                                                !!bracketMatch;
                                             return (
                                                 <tr
                                                     key={label}
-                                                    onClick={() =>
-                                                        canCopy &&
-                                                        copyToClipboard(
-                                                            label,
-                                                            value,
-                                                        )
-                                                    }
-                                                    title={
-                                                        canCopy
-                                                            ? "클릭하여 복사"
-                                                            : undefined
-                                                    }
                                                     style={{
                                                         borderBottom:
                                                             "1px solid #f3f4f6",
-                                                        cursor: canCopy
-                                                            ? "pointer"
-                                                            : "default",
                                                         background: isCopied
                                                             ? "#f0fdf4"
                                                             : "transparent",
@@ -1343,6 +1409,18 @@ export function TaskDetailModal({
                                                     }}
                                                 >
                                                     <th
+                                                        onClick={() =>
+                                                            canCopy &&
+                                                            copyToClipboard(
+                                                                label,
+                                                                value,
+                                                            )
+                                                        }
+                                                        title={
+                                                            canCopy
+                                                                ? "클릭하여 복사"
+                                                                : undefined
+                                                        }
                                                         style={{
                                                             padding: "9px 16px",
                                                             fontWeight: 600,
@@ -1360,6 +1438,9 @@ export function TaskDetailModal({
                                                                 "top",
                                                             transition:
                                                                 "all 0.15s",
+                                                            cursor: canCopy
+                                                                ? "pointer"
+                                                                : "default",
                                                         }}
                                                     >
                                                         {label}
@@ -1379,6 +1460,30 @@ export function TaskDetailModal({
                                                         )}
                                                     </th>
                                                     <td
+                                                        onClick={
+                                                            canCopyBracket
+                                                                ? () => {
+                                                                      navigator.clipboard
+                                                                          .writeText(
+                                                                              bracketMatch![1],
+                                                                          )
+                                                                          .then(
+                                                                              () => {
+                                                                                  setCopiedTdKey(
+                                                                                      label,
+                                                                                  );
+                                                                                  setTimeout(
+                                                                                      () =>
+                                                                                          setCopiedTdKey(
+                                                                                              null,
+                                                                                          ),
+                                                                                      1500,
+                                                                                  );
+                                                                              },
+                                                                          );
+                                                                  }
+                                                                : undefined
+                                                        }
                                                         style={{
                                                             padding: "9px 16px",
                                                             fontWeight: alert
@@ -1386,13 +1491,18 @@ export function TaskDetailModal({
                                                                 : 500,
                                                             color: isCopied
                                                                 ? "#15803d"
-                                                                : alert
-                                                                  ? "#ef4444"
-                                                                  : "#111827",
+                                                                : isTdCopied
+                                                                  ? "#7c3aed"
+                                                                  : alert
+                                                                    ? "#ef4444"
+                                                                    : "#111827",
                                                             verticalAlign:
                                                                 "top",
                                                             transition:
                                                                 "color 0.15s",
+                                                            cursor: canCopyBracket
+                                                                ? "pointer"
+                                                                : "default",
                                                         }}
                                                     >
                                                         {isCopied ? (
@@ -1403,14 +1513,23 @@ export function TaskDetailModal({
                                                             >
                                                                 복사됨 ✓
                                                             </span>
+                                                        ) : isTdCopied ? (
+                                                            <span
+                                                                style={{
+                                                                    fontWeight: 700,
+                                                                    color: "#7c3aed",
+                                                                }}
+                                                            >
+                                                                {
+                                                                    bracketMatch![1]
+                                                                }{" "}
+                                                                ✓
+                                                            </span>
                                                         ) : link ? (
                                                             <a
                                                                 href={link}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
-                                                                onClick={(e) =>
-                                                                    e.stopPropagation()
-                                                                }
                                                                 style={{
                                                                     color: "#1ED67D",
                                                                     fontWeight: 600,
@@ -1549,17 +1668,21 @@ export function TaskDetailModal({
                                                 </button>
                                             ))}
                                         </div>
-                                        <input
-                                            value={form.order_method_note}
-                                            onChange={(e) =>
-                                                set(
-                                                    "order_method_note",
-                                                    e.target.value,
-                                                )
-                                            }
-                                            placeholder="주문방법 메모 (선택)"
-                                            style={inp(false)}
-                                        />
+                                        {(form.order_method ===
+                                            "샘플디자인 의뢰" ||
+                                            form.order_method === "기타") && (
+                                            <input
+                                                value={form.order_method_note}
+                                                onChange={(e) =>
+                                                    set(
+                                                        "order_method_note",
+                                                        e.target.value,
+                                                    )
+                                                }
+                                                placeholder="주문방법 상세 메모 (선택)"
+                                                style={inp(false)}
+                                            />
+                                        )}
                                     </ERow>
                                     <ERow
                                         label="인쇄항목"
@@ -1568,12 +1691,21 @@ export function TaskDetailModal({
                                     >
                                         <input
                                             value={form.print_items}
-                                            onChange={(e) =>
-                                                set(
-                                                    "print_items",
-                                                    e.target.value,
-                                                )
-                                            }
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                set("print_items", val);
+                                                if (
+                                                    (val.includes("두꺼운") ||
+                                                        val.includes(
+                                                            "고품격",
+                                                        )) &&
+                                                    form.post_processing ===
+                                                        "귀도리" &&
+                                                    form.귀도리_size === "4mm"
+                                                ) {
+                                                    set("귀도리_size", "6mm");
+                                                }
+                                            }}
                                             style={inp(!!errors.print_items)}
                                         />
                                     </ERow>
@@ -1596,36 +1728,57 @@ export function TaskDetailModal({
                                                 }}
                                             >
                                                 {(["4mm", "6mm"] as const).map(
-                                                    (s) => (
-                                                        <button
-                                                            key={s}
-                                                            type="button"
-                                                            onClick={() =>
-                                                                set(
-                                                                    "귀도리_size",
-                                                                    s,
-                                                                )
-                                                            }
-                                                            style={{
-                                                                ...toggleBtn(
-                                                                    form.귀도리_size ===
+                                                    (s) => {
+                                                        const force6mm =
+                                                            form.print_items.includes(
+                                                                "두꺼운",
+                                                            ) ||
+                                                            form.print_items.includes(
+                                                                "고품격",
+                                                            );
+                                                        const disabled =
+                                                            s === "4mm" &&
+                                                            force6mm;
+                                                        return (
+                                                            <button
+                                                                key={s}
+                                                                type="button"
+                                                                disabled={
+                                                                    disabled
+                                                                }
+                                                                onClick={() =>
+                                                                    set(
+                                                                        "귀도리_size",
                                                                         s,
-                                                                ),
-                                                                ...(form.귀도리_size ===
-                                                                s
-                                                                    ? {
-                                                                          background:
-                                                                              "#7c3aed",
-                                                                          borderColor:
-                                                                              "#7c3aed",
-                                                                          color: "#fff",
-                                                                      }
-                                                                    : {}),
-                                                            }}
-                                                        >
-                                                            {s}
-                                                        </button>
-                                                    ),
+                                                                    )
+                                                                }
+                                                                style={{
+                                                                    ...toggleBtn(
+                                                                        form.귀도리_size ===
+                                                                            s,
+                                                                    ),
+                                                                    ...(form.귀도리_size ===
+                                                                    s
+                                                                        ? {
+                                                                              background:
+                                                                                  "#7c3aed",
+                                                                              borderColor:
+                                                                                  "#7c3aed",
+                                                                              color: "#fff",
+                                                                          }
+                                                                        : {}),
+                                                                    ...(disabled
+                                                                        ? {
+                                                                              opacity: 0.35,
+                                                                              cursor: "not-allowed",
+                                                                          }
+                                                                        : {}),
+                                                                }}
+                                                            >
+                                                                {s}
+                                                            </button>
+                                                        );
+                                                    },
                                                 )}
                                             </div>
                                         )}
@@ -1947,10 +2100,42 @@ export function TaskDetailModal({
                                             setForm(initEdit());
                                             setTab("edit");
                                         }}
-                                        style={footerBtn(true)}
+                                        style={{
+                                            padding: "6px 16px",
+                                            fontWeight: 600,
+                                            border: "1px solid #d1d5db",
+                                            borderRadius: 4,
+                                            cursor: "pointer",
+                                            background: "#fff",
+                                            color: "#374151",
+                                            fontFamily: "inherit",
+                                        }}
                                     >
-                                        수정하기 ✎
+                                        수정
                                     </button>
+                                    {currentStatus !== "완료" && (
+                                        <button
+                                            onClick={() =>
+                                                setCompleteConfirm(true)
+                                            }
+                                            disabled={isPending}
+                                            style={{
+                                                padding: "6px 16px",
+                                                fontWeight: 600,
+                                                border: "1px solid #bbf7d0",
+                                                borderRadius: 4,
+                                                cursor: isPending
+                                                    ? "not-allowed"
+                                                    : "pointer",
+                                                background: "#f0fdf4",
+                                                color: "#15803d",
+                                                fontFamily: "inherit",
+                                                opacity: isPending ? 0.7 : 1,
+                                            }}
+                                        >
+                                            이동
+                                        </button>
+                                    )}
                                 </>
                             ) : (
                                 <>
@@ -1997,6 +2182,7 @@ function BoardTable({
     writeButton,
     canEditDesigner = false,
     onMutate,
+    highlightPriorityRows = false,
 }: Props) {
     const [checked, setChecked] = useState<Set<string>>(new Set());
     const [modalTask, setModalTask] = useState<TaskWithDesigner | null>(null);
@@ -2131,26 +2317,6 @@ function BoardTable({
                             scope="col"
                             style={{
                                 ...styles.th,
-                                width: 72,
-                                textAlign: "center",
-                            }}
-                        >
-                            순번
-                        </th>
-                        <th
-                            scope="col"
-                            style={{
-                                ...styles.th,
-                                width: 72,
-                                textAlign: "center",
-                            }}
-                        >
-                            작업번호
-                        </th>
-                        <th
-                            scope="col"
-                            style={{
-                                ...styles.th,
                                 width: 50,
                                 textAlign: "center",
                                 cursor: "pointer",
@@ -2165,6 +2331,18 @@ function BoardTable({
                                 }
                                 onChange={toggleAll}
                             />
+                        </th>
+                        <th
+                            scope="col"
+                            style={{
+                                ...styles.th,
+                                width: 52,
+                                textAlign: "center",
+                                color: "#9ca3af",
+                                fontSize: 12,
+                            }}
+                        >
+                            순번
                         </th>
                         <th
                             scope="col"
@@ -2192,7 +2370,7 @@ function BoardTable({
                     {tasks.length === 0 && (
                         <tr>
                             <td
-                                colSpan={5}
+                                colSpan={4}
                                 style={{
                                     textAlign: "center",
                                     padding: "32px 0",
@@ -2216,7 +2394,12 @@ function BoardTable({
                                     borderLeft: task.is_priority
                                         ? "3px solid #ef4444"
                                         : "3px solid transparent",
-                                    background: isChecked ? "#f0fdf4" : "#fff",
+                                    background: isChecked
+                                        ? "#f0fdf4"
+                                        : highlightPriorityRows &&
+                                            task.is_priority
+                                          ? "#fff7f7"
+                                          : "#fff",
                                 }}
                                 onMouseEnter={(e) => {
                                     (
@@ -2230,41 +2413,12 @@ function BoardTable({
                                         e.currentTarget as HTMLElement
                                     ).style.background = isChecked
                                         ? "#f0fdf4"
-                                        : "#fff";
+                                        : highlightPriorityRows &&
+                                            task.is_priority
+                                          ? "#fff7f7"
+                                          : "#fff";
                                 }}
                             >
-                                {/* 순번 / 작업번호 */}
-                                <td
-                                    onClick={() => toggleCheck(task.id)}
-                                    style={{
-                                        ...styles.td,
-                                        width: 72,
-                                        textAlign: "center",
-                                        cursor: "pointer",
-                                        background: isChecked
-                                            ? "#dcfce7"
-                                            : "#f9fafb",
-                                    }}
-                                >
-                                    {from + i + 1}
-                                </td>
-                                <td
-                                    onClick={() => toggleCheck(task.id)}
-                                    style={{
-                                        ...styles.td,
-                                        width: 72,
-                                        textAlign: "center",
-                                        cursor: "pointer",
-                                        background: isChecked
-                                            ? "#dcfce7"
-                                            : "#f9fafb",
-                                    }}
-                                >
-                                    {task.task_number != null
-                                        ? `${task.task_number}`
-                                        : "—"}
-                                </td>
-
                                 {/* 체크박스 */}
                                 <td
                                     onClick={() => toggleCheck(task.id)}
@@ -2289,6 +2443,24 @@ function BoardTable({
                                             height: 14,
                                         }}
                                     />
+                                </td>
+
+                                {/* 순번 */}
+                                <td
+                                    onClick={() => toggleCheck(task.id)}
+                                    style={{
+                                        ...styles.td,
+                                        width: 52,
+                                        textAlign: "center",
+                                        cursor: "pointer",
+                                        color: "#9ca3af",
+                                        fontSize: 12,
+                                        background: isChecked
+                                            ? "#dcfce7"
+                                            : "#f9fafb",
+                                    }}
+                                >
+                                    {total - from - i}
                                 </td>
 
                                 {/* 내용 */}
@@ -2335,30 +2507,25 @@ function BoardTable({
                                                     task.order_method ===
                                                         "인쇄만 의뢰" ||
                                                     task.order_method ===
-                                                        "재주문(수정X)";
+                                                        "재주문(수정없는)";
                                                 return (
                                                     <span
                                                         style={{
-                                                            fontSize: 11,
+                                                            fontSize: 12,
                                                             color: isPrintOnly
-                                                                ? "#dc2626"
-                                                                : "#6b7280",
+                                                                ? "#1d4ed8"
+                                                                : "#374151",
                                                             background:
                                                                 isPrintOnly
-                                                                    ? "#fef2f2"
+                                                                    ? "#eff6ff"
                                                                     : "#f3f4f6",
-                                                            border: isPrintOnly
-                                                                ? "1px solid #fecaca"
-                                                                : "none",
-                                                            padding: "1px 6px",
+                                                            border: `1px solid ${isPrintOnly ? "#bfdbfe" : "#e5e7eb"}`,
+                                                            padding: "2px 7px",
                                                             borderRadius: 4,
                                                             whiteSpace:
                                                                 "nowrap",
                                                             flexShrink: 0,
-                                                            fontWeight:
-                                                                isPrintOnly
-                                                                    ? 700
-                                                                    : 400,
+                                                            fontWeight: 600,
                                                         }}
                                                     >
                                                         {task.order_method}
@@ -2374,6 +2541,32 @@ function BoardTable({
                                         >
                                             {task.print_items}
                                         </span>
+                                        {task.post_processing &&
+                                            task.post_processing !== "없음" && (
+                                                <span
+                                                    style={baseBadge(
+                                                        "#faf5ff",
+                                                        "#7c3aed",
+                                                        "#e9d5ff",
+                                                    )}
+                                                >
+                                                    후가공
+                                                </span>
+                                            )}
+                                        {task.print_items &&
+                                            task.print_items.includes(
+                                                "약도",
+                                            ) && (
+                                                <span
+                                                    style={baseBadge(
+                                                        "#fff7ed",
+                                                        "#ea580c",
+                                                        "#fed7aa",
+                                                    )}
+                                                >
+                                                    약도
+                                                </span>
+                                            )}
                                         {task.status === "완료" && (
                                             <span
                                                 style={{
@@ -2482,6 +2675,23 @@ function BoardTable({
 // 스타일 헬퍼
 // ─────────────────────────────────────────────────────────────
 
+function applyOrder(
+    designers: { id: string; name: string }[],
+    order: string[],
+): { id: string; name: string }[] {
+    if (!order.length) return designers;
+    const map = new Map(designers.map((d) => [d.id, d]));
+    const result: { id: string; name: string }[] = [];
+    order.forEach((id) => {
+        const d = map.get(id);
+        if (d) result.push(d);
+    });
+    designers.forEach((d) => {
+        if (!order.includes(d.id)) result.push(d);
+    });
+    return result;
+}
+
 function BulkDesignerSelect({
     designers,
     count,
@@ -2491,6 +2701,26 @@ function BulkDesignerSelect({
     count: number;
     onAssign: (id: string | null, name: string | null) => void;
 }) {
+    const [order, setOrder] = useState<string[]>([]);
+    const [sorted, setSorted] = useState<{ id: string; name: string }[]>(designers);
+
+    useEffect(() => {
+        const supabase = createClient();
+        supabase
+            .from("app_settings")
+            .select("value")
+            .eq("key", "designer_tab_order")
+            .single()
+            .then(({ data }) => {
+                const o: string[] = Array.isArray(data?.value) ? data.value : [];
+                setOrder(o);
+            });
+    }, []);
+
+    useEffect(() => {
+        setSorted(applyOrder(designers, order));
+    }, [designers, order]);
+
     return (
         <select
             defaultValue=""
@@ -2500,7 +2730,7 @@ function BulkDesignerSelect({
                 const name =
                     val === "unassigned"
                         ? null
-                        : (designers.find((d) => d.id === val)?.name ?? null);
+                        : (sorted.find((d) => d.id === val)?.name ?? null);
                 const id = val === "unassigned" ? null : val;
                 if (
                     confirm(
@@ -2527,7 +2757,7 @@ function BulkDesignerSelect({
         >
             <option value="">담당 일괄변경…</option>
             <option value="unassigned">미배정</option>
-            {designers.map((d) => (
+            {sorted.map((d) => (
                 <option key={d.id} value={d.id}>
                     {d.name}
                 </option>

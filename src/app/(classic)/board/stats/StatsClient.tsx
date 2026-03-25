@@ -2,7 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Download, CalendarDays, BarChart2, Users, BarChart3 } from "lucide-react";
+import {
+    Download,
+    CalendarDays,
+    BarChart2,
+    Users,
+    BarChart3,
+} from "lucide-react";
 import { useToast } from "../Toast";
 import * as XLSX from "xlsx-js-style"; // 엑셀 파일용 라이브러리
 
@@ -26,8 +32,8 @@ type DesignerStat = {
 const ORDER_METHODS = [
     "샘플디자인 의뢰",
     "재주문(글자수정)",
-    "인쇄만",
-    "재주문(수정X)",
+    "인쇄만 의뢰",
+    "재주문(수정없는)",
     "디자인 복원",
     "신규 디자인",
     "디자인 수정",
@@ -36,12 +42,12 @@ const ORDER_METHODS = [
 const METHOD_COLORS: Record<string, string> = {
     "샘플디자인 의뢰": "#3B82F6",
     "재주문(글자수정)": "#1ED67D",
-    "인쇄만": "#F97316",
-    "재주문(수정X)": "#A78BFA",
+    "인쇄만 의뢰": "#F97316",
+    "재주문(수정없는)": "#A78BFA",
     "디자인 복원": "#F59E0B",
     "신규 디자인": "#06B6D4",
     "디자인 수정": "#EC4899",
-    "기타": "#9CA3AF",
+    기타: "#9CA3AF",
 };
 
 const PRESETS = [
@@ -68,7 +74,12 @@ export default function StatsClient() {
     const [calMonth, setCalMonth] = useState(() => new Date());
 
     const [designers, setDesigners] = useState<Designer[]>([]);
-    const [overallCounts, setOverallCounts] = useState({ priority: 0, active: 0, done: 0, trash: 0 });
+    const [overallCounts, setOverallCounts] = useState({
+        priority: 0,
+        active: 0,
+        done: 0,
+        trash: 0,
+    });
     const [overallLoading, setOverallLoading] = useState(true);
 
     const [dayData, setDayData] = useState<DayData[]>([]);
@@ -84,18 +95,43 @@ export default function StatsClient() {
         const fetchOverall = async () => {
             setOverallLoading(true);
             const [p, a, d, t, des] = await Promise.all([
-                supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null).neq("status", "완료").eq("is_priority", true),
-                supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null).neq("status", "완료"),
-                supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null).eq("status", "완료"),
-                supabase.from("tasks").select("id", { count: "exact", head: true }).not("deleted_at", "is", null),
-                supabase.from("designers").select("id, name, avatar_url").eq("is_active", true).order("name"),
+                supabase
+                    .from("tasks")
+                    .select("id", { count: "exact", head: true })
+                    .is("deleted_at", null)
+                    .neq("status", "완료")
+                    .eq("is_priority", true),
+                supabase
+                    .from("tasks")
+                    .select("id", { count: "exact", head: true })
+                    .is("deleted_at", null)
+                    .neq("status", "완료"),
+                supabase
+                    .from("tasks")
+                    .select("id", { count: "exact", head: true })
+                    .is("deleted_at", null)
+                    .eq("status", "완료"),
+                supabase
+                    .from("tasks")
+                    .select("id", { count: "exact", head: true })
+                    .not("deleted_at", "is", null),
+                supabase
+                    .from("designers")
+                    .select("id, name, avatar_url")
+                    .eq("is_active", true)
+                    .order("name"),
             ]);
-            setOverallCounts({ priority: p.count ?? 0, active: a.count ?? 0, done: d.count ?? 0, trash: t.count ?? 0 });
+            setOverallCounts({
+                priority: p.count ?? 0,
+                active: a.count ?? 0,
+                done: d.count ?? 0,
+                trash: t.count ?? 0,
+            });
             setDesigners(des.data ?? []);
             setOverallLoading(false);
         };
         fetchOverall();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // designers를 파라미터로 받아 클로저 race condition 방지
@@ -151,7 +187,13 @@ export default function StatsClient() {
             // 2. 디자이너별 세부 집계 — 파라미터로 받은 designerList 사용
             const dMap: Record<string, DesignerStat> = {};
             designerList.forEach((d) => {
-                dMap[d.id] = { ...d, total: 0, priority: 0, normal: 0, byMethod: {} };
+                dMap[d.id] = {
+                    ...d,
+                    total: 0,
+                    priority: 0,
+                    normal: 0,
+                    byMethod: {},
+                };
             });
 
             rows.forEach((r) => {
@@ -183,7 +225,7 @@ export default function StatsClient() {
         if (designers.length > 0) {
             load(dateFrom, dateTo, designers);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [designers]);
 
     // 날짜 변경 시 재조회 (designers가 이미 로드된 경우만)
@@ -191,7 +233,7 @@ export default function StatsClient() {
         if (designers.length > 0) {
             load(dateFrom, dateTo, designers);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dateFrom, dateTo]);
 
     const setPreset = (days: number) => {
@@ -234,8 +276,11 @@ export default function StatsClient() {
         }
 
         // 통계 집계용 변수
-        let priority = 0, normal = 0;
-        let done = 0, trash = 0, active = 0;
+        let priority = 0,
+            normal = 0;
+        let done = 0,
+            trash = 0,
+            active = 0;
         const sourceMap: Record<string, number> = {};
         const methodMap: Record<string, number> = {};
 
@@ -317,9 +362,19 @@ export default function StatsClient() {
 
         const wsDetail = XLSX.utils.json_to_sheet(detailRows);
         wsDetail["!cols"] = [
-            { wpx: 50 }, { wpx: 80 }, { wpx: 80 }, { wpx: 100 },
-            { wpx: 100 }, { wpx: 150 }, { wpx: 250 }, { wpx: 100 },
-            { wpx: 100 }, { wpx: 100 }, { wpx: 120 }, { wpx: 120 }, { wpx: 300 },
+            { wpx: 50 },
+            { wpx: 80 },
+            { wpx: 80 },
+            { wpx: 100 },
+            { wpx: 100 },
+            { wpx: 150 },
+            { wpx: 250 },
+            { wpx: 100 },
+            { wpx: 100 },
+            { wpx: 100 },
+            { wpx: 120 },
+            { wpx: 120 },
+            { wpx: 300 },
         ];
         const detRange = XLSX.utils.decode_range(wsDetail["!ref"] || "A1");
         for (let R = detRange.s.r; R <= detRange.e.r; ++R) {
@@ -375,10 +430,26 @@ export default function StatsClient() {
             {/* 전체 현황 카드 */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
                 {[
-                    { label: "우선작업", value: overallCounts.priority, href: "/board?tab=priority" },
-                    { label: "작업등록", value: overallCounts.active, href: "/board?tab=active" },
-                    { label: "작업완료", value: overallCounts.done, href: "/board?tab=done" },
-                    { label: "휴지통", value: overallCounts.trash, href: "/board/trash" },
+                    {
+                        label: "우선작업",
+                        value: overallCounts.priority,
+                        href: "/board?tab=priority",
+                    },
+                    {
+                        label: "작업등록",
+                        value: overallCounts.active,
+                        href: "/board?tab=active",
+                    },
+                    {
+                        label: "작업완료",
+                        value: overallCounts.done,
+                        href: "/board?tab=done",
+                    },
+                    {
+                        label: "휴지통",
+                        value: overallCounts.trash,
+                        href: "/board/trash",
+                    },
                 ].map(({ label, value, href }) => (
                     <a
                         key={label}
@@ -386,7 +457,9 @@ export default function StatsClient() {
                         className="p-5 rounded-xl border border-gray-200 bg-white flex flex-col justify-between hover:shadow-md hover:border-gray-300 transition-all cursor-pointer"
                     >
                         <div className="flex items-center justify-between mb-4">
-                            <span className="text-sm font-medium text-gray-500">{label}</span>
+                            <span className="text-sm font-medium text-gray-500">
+                                {label}
+                            </span>
                         </div>
                         <div className="text-3xl font-bold text-gray-900 tracking-tight">
                             {overallLoading ? "—" : value}
@@ -397,382 +470,470 @@ export default function StatsClient() {
 
             {/* 동적 통계 */}
             <div className="space-y-6">
-            {/* 컨트롤 패널 */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex bg-gray-100 p-1 rounded-lg">
-                        {PRESETS.map((p) => {
-                            const isActive =
-                                dateFrom ===
-                                    toYMD(addDays(new Date(), -p.days)) &&
-                                dateTo === today;
-                            return (
-                                <button
-                                    key={p.label}
-                                    onClick={() => setPreset(p.days)}
-                                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
-                                        isActive
-                                            ? "bg-white text-gray-900 shadow-sm"
-                                            : "text-gray-500 hover:text-gray-900"
-                                    }`}
-                                >
-                                    {p.label}
-                                </button>
-                            );
-                        })}
-                    </div>
-                    <div className="flex items-center gap-2 text-sm">
-                        <input
-                            type="date"
-                            value={dateFrom}
-                            onChange={(e) => setDateFrom(e.target.value)}
-                            className="px-3 py-1.5 border border-gray-200 rounded-lg outline-none focus:border-gray-900 transition-colors text-gray-700 bg-white"
-                        />
-                        <span className="text-gray-400">~</span>
-                        <input
-                            type="date"
-                            value={dateTo}
-                            onChange={(e) => setDateTo(e.target.value)}
-                            className="px-3 py-1.5 border border-gray-200 rounded-lg outline-none focus:border-gray-900 transition-colors text-gray-700 bg-white"
-                        />
-                    </div>
-                </div>
-
-                <button
-                    onClick={downloadExcel}
-                    className="flex items-center gap-2 px-4 py-2 border border-gray-200 bg-white text-gray-900 rounded-lg font-medium text-sm hover:bg-gray-50 transition-colors"
-                >
-                    <Download className="w-4 h-4" />
-                    엑셀 파일(.xlsx) 다운로드
-                </button>
-            </div>
-
-            {loading ? (
-                <div className="py-20 text-center text-gray-400 font-medium">
-                    데이터를 불러오는 중입니다...
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* 일별 바차트 */}
-                    <div className="bg-white border border-gray-200 rounded-xl p-6">
-                        <div className="flex items-center gap-2 mb-4">
-                            <BarChart2 className="w-5 h-5 text-gray-500" />
-                            <h3 className="font-semibold text-gray-900">
-                                일별 완료 흐름
-                            </h3>
-                        </div>
-
-                        <div className="flex items-end justify-between gap-[1px] sm:gap-[2px] w-full relative pb-1 mt-4 h-65">
-                            {dayData.map((d, i) => {
-                                const hPercent =
-                                    d.count > 0
-                                        ? Math.max(2, (d.count / maxCount) * 100)
-                                        : 0;
-                                const isToday = d.date === today;
-                                const intensity =
-                                    d.count > 0
-                                        ? Math.max(0.15, d.count / maxCount)
-                                        : 0;
-
-                                const bgStyle =
-                                    d.count === 0
-                                        ? { backgroundColor: "#f3f4f6" }
-                                        : isToday
-                                          ? { backgroundColor: "#1ED67D" }
-                                          : { backgroundColor: `rgba(17, 24, 39, ${intensity})` };
-
+                {/* 컨트롤 패널 */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex flex-wrap items-center gap-4">
+                        <div className="flex bg-gray-100 p-1 rounded-lg">
+                            {PRESETS.map((p) => {
+                                const isActive =
+                                    dateFrom ===
+                                        toYMD(addDays(new Date(), -p.days)) &&
+                                    dateTo === today;
                                 return (
-                                    <div
-                                        key={d.date}
-                                        className="group relative flex flex-col items-center justify-end flex-1 h-full"
+                                    <button
+                                        key={p.label}
+                                        onClick={() => setPreset(p.days)}
+                                        className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                                            isActive
+                                                ? "bg-white text-gray-900 shadow-sm"
+                                                : "text-gray-500 hover:text-gray-900"
+                                        }`}
                                     >
-                                        <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[11px] p-2.5 rounded-lg shadow-xl transition-opacity whitespace-nowrap z-50 pointer-events-none min-w-[100px]">
-                                            <div className="font-bold border-b border-gray-700 pb-1.5 mb-1.5 text-center">
-                                                {d.date.replace(/-/g, ".")}{" "}
-                                                <span className="text-[#1ED67D]">
-                                                    총 {d.count}건
-                                                </span>
-                                            </div>
-                                            <div className="flex flex-col gap-1 text-gray-300">
-                                                <div className="flex justify-between gap-3">
-                                                    <span>우선작업</span>{" "}
-                                                    <span className="font-medium text-white">
-                                                        {d.priority}건
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between gap-3">
-                                                    <span>일반작업</span>{" "}
-                                                    <span className="font-medium text-[#1ED67D]">
-                                                        {d.normal}건
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-gray-900"></div>
-                                        </div>
-                                        <div
-                                            style={{
-                                                height: `${hPercent}%`,
-                                                ...bgStyle,
-                                            }}
-                                            className="w-full max-w-[24px] rounded-t-[2px] transition-all duration-300"
-                                        />
-                                        {shouldShowLabel(i, dayData.length) && (
-                                            <span
-                                                className={`absolute -bottom-5 text-[9px] whitespace-nowrap ${
-                                                    isToday
-                                                        ? "text-[#1ED67D] font-bold"
-                                                        : "text-gray-400"
-                                                }`}
-                                            >
-                                                {d.date.slice(5).replace("-", "/")}
-                                            </span>
-                                        )}
-                                    </div>
+                                        {p.label}
+                                    </button>
                                 );
                             })}
                         </div>
+                        <div className="flex items-center gap-2 text-sm">
+                            <input
+                                type="date"
+                                value={dateFrom}
+                                onChange={(e) => setDateFrom(e.target.value)}
+                                className="px-3 py-1.5 border border-gray-200 rounded-lg outline-none focus:border-gray-900 transition-colors text-gray-700 bg-white"
+                            />
+                            <span className="text-gray-400">~</span>
+                            <input
+                                type="date"
+                                value={dateTo}
+                                onChange={(e) => setDateTo(e.target.value)}
+                                className="px-3 py-1.5 border border-gray-200 rounded-lg outline-none focus:border-gray-900 transition-colors text-gray-700 bg-white"
+                            />
+                        </div>
                     </div>
 
-                    {/* 월간 히트맵 */}
-                    <div className="bg-white border border-gray-200 rounded-xl p-6">
-                        <div className="flex items-center justify-between mb-6">
-                            <div className="flex items-center gap-2">
-                                <CalendarDays className="w-5 h-5 text-gray-500" />
+                    <button
+                        onClick={downloadExcel}
+                        className="flex items-center gap-2 px-4 py-2 border border-gray-200 bg-white text-gray-900 rounded-lg font-medium text-sm hover:bg-gray-50 transition-colors"
+                    >
+                        <Download className="w-4 h-4" />
+                        엑셀 파일(.xlsx) 다운로드
+                    </button>
+                </div>
+
+                {loading ? (
+                    <div className="py-20 text-center text-gray-400 font-medium">
+                        데이터를 불러오는 중입니다...
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* 일별 바차트 */}
+                        <div className="bg-white border border-gray-200 rounded-xl p-6">
+                            <div className="flex items-center gap-2 mb-4">
+                                <BarChart2 className="w-5 h-5 text-gray-500" />
                                 <h3 className="font-semibold text-gray-900">
-                                    월간 작업 히트맵
+                                    일별 완료 흐름
                                 </h3>
                             </div>
-                            <div className="flex items-center gap-3">
-                                <button
-                                    onClick={() =>
-                                        setCalMonth(
-                                            (m) => new Date(m.getFullYear(), m.getMonth() - 1, 1),
-                                        )
-                                    }
-                                    className="p-1 text-gray-400 hover:text-gray-900 rounded transition-colors"
-                                >
-                                    ‹
-                                </button>
-                                <span className="font-medium text-gray-900 text-sm">
-                                    {calYear}.{" "}
-                                    {String(calMon + 1).padStart(2, "0")}
-                                </span>
-                                <button
-                                    onClick={() =>
-                                        setCalMonth(
-                                            (m) => new Date(m.getFullYear(), m.getMonth() + 1, 1),
-                                        )
-                                    }
-                                    className="p-1 text-gray-400 hover:text-gray-900 rounded transition-colors"
-                                >
-                                    ›
-                                </button>
-                            </div>
-                        </div>
 
-                        <div className="grid grid-cols-7 gap-1">
-                            {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
-                                <div
-                                    key={d}
-                                    className="text-center text-[11px] text-gray-400 font-medium py-1"
-                                >
-                                    {d}
-                                </div>
-                            ))}
-                            {Array.from({ length: firstDay }).map((_, i) => (
-                                <div key={`e${i}`} />
-                            ))}
-                            {Array.from({ length: daysInMonth }).map((_, i) => {
-                                const day = i + 1;
-                                const dStr = `${calYear}-${String(calMon + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                                const dayStat = calDayMap[dStr];
-                                const cnt = dayStat?.count ?? 0;
-                                const intensity =
-                                    cnt > 0 ? Math.max(0.15, cnt / calMaxCount) : 0;
-                                const isToday2 = dStr === today;
+                            <div className="flex items-end justify-between gap-[1px] sm:gap-[2px] w-full relative pb-1 mt-4 h-65">
+                                {dayData.map((d, i) => {
+                                    const hPercent =
+                                        d.count > 0
+                                            ? Math.max(
+                                                  2,
+                                                  (d.count / maxCount) * 100,
+                                              )
+                                            : 0;
+                                    const isToday = d.date === today;
+                                    const intensity =
+                                        d.count > 0
+                                            ? Math.max(0.15, d.count / maxCount)
+                                            : 0;
 
-                                return (
-                                    <div
-                                        key={day}
-                                        className="group relative flex flex-col items-center justify-center h-10 rounded-md"
-                                        style={{
-                                            backgroundColor:
-                                                cnt > 0
-                                                    ? `rgba(30, 214, 125, ${intensity})`
-                                                    : "transparent",
-                                            border: isToday2
-                                                ? "1.5px solid #111827"
-                                                : "1.5px solid transparent",
-                                        }}
-                                    >
-                                        <span
-                                            className={`text-[11px] ${
-                                                cnt > 0
-                                                    ? intensity > 0.6
-                                                        ? "text-gray-900 font-bold"
-                                                        : "text-gray-800 font-medium"
-                                                    : isToday2
-                                                      ? "text-gray-900 font-bold"
-                                                      : "text-gray-400"
-                                            }`}
+                                    const bgStyle =
+                                        d.count === 0
+                                            ? { backgroundColor: "#f3f4f6" }
+                                            : isToday
+                                              ? { backgroundColor: "#1ED67D" }
+                                              : {
+                                                    backgroundColor: `rgba(17, 24, 39, ${intensity})`,
+                                                };
+
+                                    return (
+                                        <div
+                                            key={d.date}
+                                            className="group relative flex flex-col items-center justify-end flex-1 h-full"
                                         >
-                                            {day}
-                                        </span>
-
-                                        {cnt > 0 && dayStat && (
                                             <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[11px] p-2.5 rounded-lg shadow-xl transition-opacity whitespace-nowrap z-50 pointer-events-none min-w-[100px]">
                                                 <div className="font-bold border-b border-gray-700 pb-1.5 mb-1.5 text-center">
-                                                    {dStr.replace(/-/g, ".")}{" "}
+                                                    {d.date.replace(/-/g, ".")}{" "}
                                                     <span className="text-[#1ED67D]">
-                                                        총 {cnt}건
+                                                        총 {d.count}건
                                                     </span>
                                                 </div>
                                                 <div className="flex flex-col gap-1 text-gray-300">
                                                     <div className="flex justify-between gap-3">
-                                                        <span>우선</span>{" "}
+                                                        <span>우선작업</span>{" "}
                                                         <span className="font-medium text-white">
-                                                            {dayStat.priority}건
+                                                            {d.priority}건
                                                         </span>
                                                     </div>
                                                     <div className="flex justify-between gap-3">
-                                                        <span>일반</span>{" "}
+                                                        <span>일반작업</span>{" "}
                                                         <span className="font-medium text-[#1ED67D]">
-                                                            {dayStat.normal}건
+                                                            {d.normal}건
                                                         </span>
                                                     </div>
                                                 </div>
                                                 <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-gray-900"></div>
                                             </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
+                                            <div
+                                                style={{
+                                                    height: `${hPercent}%`,
+                                                    ...bgStyle,
+                                                }}
+                                                className="w-full max-w-[24px] rounded-t-[2px] transition-all duration-300"
+                                            />
+                                            {shouldShowLabel(
+                                                i,
+                                                dayData.length,
+                                            ) && (
+                                                <span
+                                                    className={`absolute -bottom-5 text-[9px] whitespace-nowrap ${
+                                                        isToday
+                                                            ? "text-[#1ED67D] font-bold"
+                                                            : "text-gray-400"
+                                                    }`}
+                                                >
+                                                    {d.date
+                                                        .slice(5)
+                                                        .replace("-", "/")}
+                                                </span>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* 월간 히트맵 */}
+                        <div className="bg-white border border-gray-200 rounded-xl p-6">
+                            <div className="flex items-center justify-between mb-6">
+                                <div className="flex items-center gap-2">
+                                    <CalendarDays className="w-5 h-5 text-gray-500" />
+                                    <h3 className="font-semibold text-gray-900">
+                                        월간 작업 히트맵
+                                    </h3>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        onClick={() =>
+                                            setCalMonth(
+                                                (m) =>
+                                                    new Date(
+                                                        m.getFullYear(),
+                                                        m.getMonth() - 1,
+                                                        1,
+                                                    ),
+                                            )
+                                        }
+                                        className="p-1 text-gray-400 hover:text-gray-900 rounded transition-colors"
+                                    >
+                                        ‹
+                                    </button>
+                                    <span className="font-medium text-gray-900 text-sm">
+                                        {calYear}.{" "}
+                                        {String(calMon + 1).padStart(2, "0")}
+                                    </span>
+                                    <button
+                                        onClick={() =>
+                                            setCalMonth(
+                                                (m) =>
+                                                    new Date(
+                                                        m.getFullYear(),
+                                                        m.getMonth() + 1,
+                                                        1,
+                                                    ),
+                                            )
+                                        }
+                                        className="p-1 text-gray-400 hover:text-gray-900 rounded transition-colors"
+                                    >
+                                        ›
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-7 gap-1">
+                                {["일", "월", "화", "수", "목", "금", "토"].map(
+                                    (d) => (
+                                        <div
+                                            key={d}
+                                            className="text-center text-[11px] text-gray-400 font-medium py-1"
+                                        >
+                                            {d}
+                                        </div>
+                                    ),
+                                )}
+                                {Array.from({ length: firstDay }).map(
+                                    (_, i) => (
+                                        <div key={`e${i}`} />
+                                    ),
+                                )}
+                                {Array.from({ length: daysInMonth }).map(
+                                    (_, i) => {
+                                        const day = i + 1;
+                                        const dStr = `${calYear}-${String(calMon + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                                        const dayStat = calDayMap[dStr];
+                                        const cnt = dayStat?.count ?? 0;
+                                        const intensity =
+                                            cnt > 0
+                                                ? Math.max(
+                                                      0.15,
+                                                      cnt / calMaxCount,
+                                                  )
+                                                : 0;
+                                        const isToday2 = dStr === today;
+
+                                        return (
+                                            <div
+                                                key={day}
+                                                className="group relative flex flex-col items-center justify-center h-10 rounded-md"
+                                                style={{
+                                                    backgroundColor:
+                                                        cnt > 0
+                                                            ? `rgba(30, 214, 125, ${intensity})`
+                                                            : "transparent",
+                                                    border: isToday2
+                                                        ? "1.5px solid #111827"
+                                                        : "1.5px solid transparent",
+                                                }}
+                                            >
+                                                <span
+                                                    className={`text-[11px] ${
+                                                        cnt > 0
+                                                            ? intensity > 0.6
+                                                                ? "text-gray-900 font-bold"
+                                                                : "text-gray-800 font-medium"
+                                                            : isToday2
+                                                              ? "text-gray-900 font-bold"
+                                                              : "text-gray-400"
+                                                    }`}
+                                                >
+                                                    {day}
+                                                </span>
+
+                                                {cnt > 0 && dayStat && (
+                                                    <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[11px] p-2.5 rounded-lg shadow-xl transition-opacity whitespace-nowrap z-50 pointer-events-none min-w-[100px]">
+                                                        <div className="font-bold border-b border-gray-700 pb-1.5 mb-1.5 text-center">
+                                                            {dStr.replace(
+                                                                /-/g,
+                                                                ".",
+                                                            )}{" "}
+                                                            <span className="text-[#1ED67D]">
+                                                                총 {cnt}건
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex flex-col gap-1 text-gray-300">
+                                                            <div className="flex justify-between gap-3">
+                                                                <span>
+                                                                    우선
+                                                                </span>{" "}
+                                                                <span className="font-medium text-white">
+                                                                    {
+                                                                        dayStat.priority
+                                                                    }
+                                                                    건
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex justify-between gap-3">
+                                                                <span>
+                                                                    일반
+                                                                </span>{" "}
+                                                                <span className="font-medium text-[#1ED67D]">
+                                                                    {
+                                                                        dayStat.normal
+                                                                    }
+                                                                    건
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-gray-900"></div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    },
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
 
-            {/* 디자이너별 세부 누적 바차트 */}
-            {!loading && designerStats.length > 0 && (
-                <div className="bg-white border border-gray-200 rounded-xl p-6">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                        <div className="flex items-center gap-2">
-                            <Users className="w-5 h-5 text-gray-500" />
-                            <h3 className="font-semibold text-gray-900">
-                                디자이너별 완료 성과
-                            </h3>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-medium text-gray-500">
-                            {ORDER_METHODS.map((m) => (
-                                <div key={m} className="flex items-center gap-1.5">
+                {/* 디자이너별 세부 누적 바차트 */}
+                {!loading && designerStats.length > 0 && (
+                    <div className="bg-white border border-gray-200 rounded-xl p-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                            <div className="flex items-center gap-2">
+                                <Users className="w-5 h-5 text-gray-500" />
+                                <h3 className="font-semibold text-gray-900">
+                                    디자이너별 완료 성과
+                                </h3>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-medium text-gray-500">
+                                {ORDER_METHODS.map((m) => (
                                     <div
-                                        className="w-2.5 h-2.5 rounded-sm"
-                                        style={{ backgroundColor: METHOD_COLORS[m] }}
-                                    />
-                                    {m}
+                                        key={m}
+                                        className="flex items-center gap-1.5"
+                                    >
+                                        <div
+                                            className="w-2.5 h-2.5 rounded-sm"
+                                            style={{
+                                                backgroundColor:
+                                                    METHOD_COLORS[m],
+                                            }}
+                                        />
+                                        {m}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col gap-5">
+                            {designerStats.map((d) => (
+                                <div
+                                    key={d.id}
+                                    className="flex items-center gap-4"
+                                >
+                                    <div className="flex items-center gap-3 w-32 shrink-0">
+                                        {d.avatar_url ? (
+                                            <img
+                                                src={d.avatar_url}
+                                                alt={d.name}
+                                                className="w-7 h-7 rounded-full object-cover border border-gray-200"
+                                            />
+                                        ) : (
+                                            <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-s font-medium text-gray-600">
+                                                {d.name[0]}
+                                            </div>
+                                        )}
+                                        <span className="text-s font-medium text-gray-700 truncate">
+                                            {d.name}
+                                        </span>
+                                    </div>
+
+                                    <div className="flex-1 h-5 flex items-center group relative cursor-pointer">
+                                        <div
+                                            className="h-full flex rounded-sm overflow-hidden"
+                                            style={{
+                                                width: `${d.total > 0 ? Math.max(2, (d.total / maxDesigner) * 100) : 0}%`,
+                                            }}
+                                        >
+                                            {ORDER_METHODS.map((m) => {
+                                                const count =
+                                                    d.byMethod[m] ?? 0;
+                                                if (count === 0) return null;
+                                                return (
+                                                    <div
+                                                        key={m}
+                                                        className="h-full transition-all"
+                                                        style={{
+                                                            width: `${(count / d.total) * 100}%`,
+                                                            backgroundColor:
+                                                                METHOD_COLORS[
+                                                                    m
+                                                                ],
+                                                        }}
+                                                    />
+                                                );
+                                            })}
+                                            {Object.entries(d.byMethod)
+                                                .filter(
+                                                    ([m]) =>
+                                                        !ORDER_METHODS.includes(
+                                                            m,
+                                                        ),
+                                                )
+                                                .map(([m, count]) => (
+                                                    <div
+                                                        key={m}
+                                                        className="h-full transition-all bg-gray-400"
+                                                        style={{
+                                                            width: `${(count / d.total) * 100}%`,
+                                                        }}
+                                                    />
+                                                ))}
+                                        </div>
+                                        <span className="text-gray-900 text-sm font-semibold ml-3 w-8 shrink-0">
+                                            {d.total > 0
+                                                ? `${d.total}건`
+                                                : "0건"}
+                                        </span>
+
+                                        {d.total > 0 && (
+                                            <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/4 bg-gray-900 text-white text-[11px] p-2.5 rounded-lg shadow-xl transition-opacity whitespace-nowrap z-50 pointer-events-none min-w-[140px]">
+                                                <div className="font-bold border-b border-gray-700 pb-1.5 mb-1.5 text-center">
+                                                    {d.name}{" "}
+                                                    <span className="text-[#1ED67D]">
+                                                        총 {d.total}건
+                                                    </span>
+                                                </div>
+                                                <div className="flex flex-col gap-1 text-gray-300">
+                                                    {ORDER_METHODS.map((m) => {
+                                                        const count =
+                                                            d.byMethod[m] ?? 0;
+                                                        if (count === 0)
+                                                            return null;
+                                                        return (
+                                                            <div
+                                                                key={m}
+                                                                className="flex justify-between gap-3"
+                                                            >
+                                                                <span className="flex items-center gap-1.5">
+                                                                    <span
+                                                                        className="inline-block w-2 h-2 rounded-sm shrink-0"
+                                                                        style={{
+                                                                            backgroundColor:
+                                                                                METHOD_COLORS[
+                                                                                    m
+                                                                                ],
+                                                                        }}
+                                                                    />
+                                                                    {m}
+                                                                </span>
+                                                                <span className="font-medium text-white">
+                                                                    {count}건
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                    {Object.entries(d.byMethod)
+                                                        .filter(
+                                                            ([m]) =>
+                                                                !ORDER_METHODS.includes(
+                                                                    m,
+                                                                ),
+                                                        )
+                                                        .map(([m, count]) => (
+                                                            <div
+                                                                key={m}
+                                                                className="flex justify-between gap-3"
+                                                            >
+                                                                <span>{m}</span>
+                                                                <span className="font-medium text-white">
+                                                                    {count}건
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                </div>
+                                                <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-gray-900"></div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                         </div>
                     </div>
-
-                    <div className="flex flex-col gap-5">
-                        {designerStats.map((d) => (
-                            <div key={d.id} className="flex items-center gap-4">
-                                <div className="flex items-center gap-3 w-32 shrink-0">
-                                    {d.avatar_url ? (
-                                        <img
-                                            src={d.avatar_url}
-                                            alt={d.name}
-                                            className="w-7 h-7 rounded-full object-cover border border-gray-200"
-                                        />
-                                    ) : (
-                                        <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-s font-medium text-gray-600">
-                                            {d.name[0]}
-                                        </div>
-                                    )}
-                                    <span className="text-s font-medium text-gray-700 truncate">
-                                        {d.name}
-                                    </span>
-                                </div>
-
-                                <div className="flex-1 h-5 flex items-center group relative cursor-pointer">
-                                    <div
-                                        className="h-full flex rounded-sm overflow-hidden"
-                                        style={{
-                                            width: `${d.total > 0 ? Math.max(2, (d.total / maxDesigner) * 100) : 0}%`,
-                                        }}
-                                    >
-                                        {ORDER_METHODS.map((m) => {
-                                            const count = d.byMethod[m] ?? 0;
-                                            if (count === 0) return null;
-                                            return (
-                                                <div
-                                                    key={m}
-                                                    className="h-full transition-all"
-                                                    style={{
-                                                        width: `${(count / d.total) * 100}%`,
-                                                        backgroundColor: METHOD_COLORS[m],
-                                                    }}
-                                                />
-                                            );
-                                        })}
-                                        {Object.entries(d.byMethod)
-                                            .filter(([m]) => !ORDER_METHODS.includes(m))
-                                            .map(([m, count]) => (
-                                                <div
-                                                    key={m}
-                                                    className="h-full transition-all bg-gray-400"
-                                                    style={{ width: `${(count / d.total) * 100}%` }}
-                                                />
-                                            ))}
-                                    </div>
-                                    <span className="text-gray-900 text-sm font-semibold ml-3 w-8 shrink-0">
-                                        {d.total > 0 ? `${d.total}건` : "0건"}
-                                    </span>
-
-                                    {d.total > 0 && (
-                                        <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/4 bg-gray-900 text-white text-[11px] p-2.5 rounded-lg shadow-xl transition-opacity whitespace-nowrap z-50 pointer-events-none min-w-[140px]">
-                                            <div className="font-bold border-b border-gray-700 pb-1.5 mb-1.5 text-center">
-                                                {d.name}{" "}
-                                                <span className="text-[#1ED67D]">
-                                                    총 {d.total}건
-                                                </span>
-                                            </div>
-                                            <div className="flex flex-col gap-1 text-gray-300">
-                                                {ORDER_METHODS.map((m) => {
-                                                    const count = d.byMethod[m] ?? 0;
-                                                    if (count === 0) return null;
-                                                    return (
-                                                        <div key={m} className="flex justify-between gap-3">
-                                                            <span className="flex items-center gap-1.5">
-                                                                <span
-                                                                    className="inline-block w-2 h-2 rounded-sm shrink-0"
-                                                                    style={{ backgroundColor: METHOD_COLORS[m] }}
-                                                                />
-                                                                {m}
-                                                            </span>
-                                                            <span className="font-medium text-white">{count}건</span>
-                                                        </div>
-                                                    );
-                                                })}
-                                                {Object.entries(d.byMethod)
-                                                    .filter(([m]) => !ORDER_METHODS.includes(m))
-                                                    .map(([m, count]) => (
-                                                        <div key={m} className="flex justify-between gap-3">
-                                                            <span>{m}</span>
-                                                            <span className="font-medium text-white">{count}건</span>
-                                                        </div>
-                                                    ))}
-                                            </div>
-                                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-gray-900"></div>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
+                )}
             </div>
         </div>
     );

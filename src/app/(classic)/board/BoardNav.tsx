@@ -61,6 +61,7 @@ export default function BoardNav() {
     const [isAdmin, setIsAdmin] = useState(false);
     const [canManage, setCanManage] = useState(false);
     const [counts, setCounts] = useState({ priority: 0, active: 0, done: 0 });
+    const [designerCounts, setDesignerCounts] = useState<Record<string, number>>({});
     const [loaded, setLoaded] = useState(false);
 
     // 드래그 상태
@@ -113,6 +114,23 @@ export default function BoardNav() {
                 active: countRes[1].count ?? 0,
                 done: countRes[2].count ?? 0,
             });
+
+            // 디자이너별 진행중 작업 수
+            const { data: activeTasks } = await supabase
+                .from("tasks")
+                .select("assigned_designer_id")
+                .is("deleted_at", null)
+                .neq("status", "완료")
+                .not("assigned_designer_id", "is", null);
+            const dCounts: Record<string, number> = {};
+            (activeTasks ?? []).forEach((t) => {
+                if (t.assigned_designer_id) {
+                    dCounts[t.assigned_designer_id] =
+                        (dCounts[t.assigned_designer_id] ?? 0) + 1;
+                }
+            });
+            setDesignerCounts(dCounts);
+
             setLoaded(true);
         };
 
@@ -125,6 +143,21 @@ export default function BoardNav() {
                 supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null).eq("status", "완료"),
             ]);
             setCounts({ priority: p.count ?? 0, active: a.count ?? 0, done: d.count ?? 0 });
+
+            const { data: activeTasks } = await supabase
+                .from("tasks")
+                .select("assigned_designer_id")
+                .is("deleted_at", null)
+                .neq("status", "완료")
+                .not("assigned_designer_id", "is", null);
+            const dCounts: Record<string, number> = {};
+            (activeTasks ?? []).forEach((t) => {
+                if (t.assigned_designer_id) {
+                    dCounts[t.assigned_designer_id] =
+                        (dCounts[t.assigned_designer_id] ?? 0) + 1;
+                }
+            });
+            setDesignerCounts(dCounts);
         };
 
         window.addEventListener("board-refresh", refreshCounts);
@@ -320,6 +353,10 @@ export default function BoardNav() {
                                                 </div>
                                             )}
                                             {d.name}
+                                            <Badge
+                                                count={designerCounts[d.id] ?? 0}
+                                                bg="#6b7280"
+                                            />
                                         </Link>
                                     )}
                                 </div>

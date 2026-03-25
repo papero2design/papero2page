@@ -1,17 +1,21 @@
 // src/app/(classic)/board/layout.tsx
-// 정적 셸 — 서버 쿼리 없음. 인증은 middleware.ts, 데이터는 각 클라이언트 컴포넌트에서 직접 fetch
 import "./board.css";
 import { Suspense } from "react";
 import Link from "next/link";
 import BoardNav from "./BoardNav";
 import Image from "next/image";
 import LogoutButton from "./LogoutButton";
+import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 
-export default function BoardLayout({
+export default async function BoardLayout({
     children,
 }: {
     children: React.ReactNode;
 }) {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) redirect("/login");
     return (
         <div id="wrap">
             <header

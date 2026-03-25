@@ -7,8 +7,8 @@ import { useCallback } from "react";
 const ORDER_METHODS = [
     "샘플디자인 의뢰",
     "재주문(글자수정)",
-    "인쇄만",
-    "재주문(수정X)",
+    "인쇄만 의뢰",
+    "재주문(수정없는)",
     "디자인 복원",
     "신규 디자인",
     "디자인 수정",
@@ -166,7 +166,14 @@ export default function FilterBar({
                 />
 
                 {/* 날짜 범위 */}
-                <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        flexShrink: 0,
+                    }}
+                >
                     <input
                         type="date"
                         value={currentDateFrom}

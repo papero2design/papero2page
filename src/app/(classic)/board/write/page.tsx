@@ -13,8 +13,8 @@ const ORDER_SOURCES = ["홈페이지", "스토어팜"];
 const ORDER_METHODS = [
     "샘플디자인 의뢰",
     "재주문(글자수정)",
-    "인쇄만",
-    "재주문(수정X)",
+    "인쇄만 의뢰",
+    "재주문(수정없는)",
     "디자인 복원",
     "신규 디자인",
     "디자인 수정",
@@ -23,7 +23,7 @@ const ORDER_METHODS = [
 const POST_PROCESSINGS = ["없음", "단면박", "양면박", "귀도리", "기타"];
 const FILE_PATHS = ["게시판", "메일", "없음"];
 const CONSULT_PATHS = ["네이버톡톡", "카카오톡채널", "메일", "없음"];
-const QUICK_METHODS = ["인쇄만", "재주문(수정X)"];
+const QUICK_METHODS = ["인쇄만 의뢰", "재주문(수정없는)"];
 
 const INIT = {
     order_source: "" as string,
@@ -244,15 +244,18 @@ export default function BoardWritePage() {
                                     </button>
                                 ))}
                             </div>
-                            <input
-                                type="text"
-                                value={form.order_method_note}
-                                onChange={(e) =>
-                                    set("order_method_note", e.target.value)
-                                }
-                                placeholder="주문방법 상세 메모 (선택)"
-                                style={inp(false)}
-                            />
+                            {(form.order_method === "샘플디자인 의뢰" ||
+                                form.order_method === "기타") && (
+                                <input
+                                    type="text"
+                                    value={form.order_method_note}
+                                    onChange={(e) =>
+                                        set("order_method_note", e.target.value)
+                                    }
+                                    placeholder="주문방법 상세 메모 (선택)"
+                                    style={inp(false)}
+                                />
+                            )}
                         </Row>
 
                         <Row

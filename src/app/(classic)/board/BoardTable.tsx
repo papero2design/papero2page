@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useTransition, useEffect, useCallback, useRef, memo } from "react";
+import {
+    useState,
+    useTransition,
+    useEffect,
+    useCallback,
+    useRef,
+    memo,
+} from "react";
 import { TaskWithDesigner } from "@/types/database";
 import { deleteTaskFile } from "./actions";
 import {
@@ -47,7 +54,7 @@ const ORDER_SOURCES = ["홈페이지", "스토어팜"];
 const ORDER_METHODS = [
     "샘플디자인 의뢰",
     "재주문(글자수정)",
-    "인쇄만",
+    "인쇄만 의뢰",
     "재주문(수정X)",
     "디자인 복원",
     "신규 디자인",
@@ -412,8 +419,12 @@ function LogTimeline({ taskId }: { taskId: string }) {
                                     const hasOld = log.old_value !== null;
                                     const hasNew = log.new_value !== null;
                                     const showArrow = hasOld || hasNew;
-                                    const displayOld = log.old_value ?? (hasNew ? "미작성" : null);
-                                    const displayNew = log.new_value ?? (hasOld ? "미작성" : null);
+                                    const displayOld =
+                                        log.old_value ??
+                                        (hasNew ? "미작성" : null);
+                                    const displayNew =
+                                        log.new_value ??
+                                        (hasOld ? "미작성" : null);
                                     return (
                                         <>
                                             {displayOld !== null && (
@@ -422,16 +433,30 @@ function LogTimeline({ taskId }: { taskId: string }) {
                                                         style={{
                                                             padding: "1px 5px",
                                                             borderRadius: 4,
-                                                            background: "#f3f4f6",
-                                                            color: hasOld ? "#6b7280" : "#d1d5db",
-                                                            textDecoration: hasOld ? "line-through" : "none",
-                                                            fontStyle: hasOld ? "normal" : "italic",
+                                                            background:
+                                                                "#f3f4f6",
+                                                            color: hasOld
+                                                                ? "#6b7280"
+                                                                : "#d1d5db",
+                                                            textDecoration:
+                                                                hasOld
+                                                                    ? "line-through"
+                                                                    : "none",
+                                                            fontStyle: hasOld
+                                                                ? "normal"
+                                                                : "italic",
                                                         }}
                                                     >
                                                         {displayOld}
                                                     </span>
                                                     {showArrow && (
-                                                        <span style={{ color: "#d1d5db" }}>→</span>
+                                                        <span
+                                                            style={{
+                                                                color: "#d1d5db",
+                                                            }}
+                                                        >
+                                                            →
+                                                        </span>
                                                     )}
                                                 </>
                                             )}
@@ -442,30 +467,40 @@ function LogTimeline({ taskId }: { taskId: string }) {
                                                         borderRadius: 4,
                                                         fontWeight: 600,
                                                         background:
-                                                            log.changed_field === "status"
+                                                            log.changed_field ===
+                                                            "status"
                                                                 ? "#f0fdf4"
-                                                                : log.changed_field === "is_priority"
+                                                                : log.changed_field ===
+                                                                    "is_priority"
                                                                   ? "#fef2f2"
                                                                   : "#f3f4f6",
                                                         color: !hasNew
                                                             ? "#d1d5db"
-                                                            : log.changed_field === "status"
+                                                            : log.changed_field ===
+                                                                "status"
                                                               ? "#15803d"
-                                                              : log.changed_field === "is_priority"
+                                                              : log.changed_field ===
+                                                                  "is_priority"
                                                                 ? "#dc2626"
-                                                                : log.changed_field === "deleted"
+                                                                : log.changed_field ===
+                                                                    "deleted"
                                                                   ? "#6b7280"
-                                                                  : log.changed_field === "restored"
+                                                                  : log.changed_field ===
+                                                                      "restored"
                                                                     ? "#2563eb"
                                                                     : "#111827",
                                                         border: "1px solid",
                                                         borderColor:
-                                                            log.changed_field === "status"
+                                                            log.changed_field ===
+                                                            "status"
                                                                 ? "#bbf7d0"
-                                                                : log.changed_field === "is_priority"
+                                                                : log.changed_field ===
+                                                                    "is_priority"
                                                                   ? "#fecaca"
                                                                   : "#e5e7eb",
-                                                        fontStyle: hasNew ? "normal" : "italic",
+                                                        fontStyle: hasNew
+                                                            ? "normal"
+                                                            : "italic",
                                                     }}
                                                 >
                                                     {displayNew}
@@ -547,7 +582,8 @@ function useTaskFiles(taskId: string) {
             .order("created_at")
             .then(({ data, error }) => {
                 if (cancelled) return;
-                if (error) console.error("[useTaskFiles] 조회 실패:", error.message);
+                if (error)
+                    console.error("[useTaskFiles] 조회 실패:", error.message);
                 const mapped: ExistingFile[] = (data ?? []).map(
                     (f: {
                         id: string;
@@ -564,7 +600,9 @@ function useTaskFiles(taskId: string) {
                 setFiles(mapped);
                 setLoading(false);
             });
-        return () => { cancelled = true; };
+        return () => {
+            cancelled = true;
+        };
     }, [taskId, rev]);
 
     // setLoading(true) is called here (outside the effect) so the linter is satisfied
@@ -1358,7 +1396,11 @@ export function TaskDetailModal({
                                                         }}
                                                     >
                                                         {isCopied ? (
-                                                            <span style={{ fontWeight: 700 }}>
+                                                            <span
+                                                                style={{
+                                                                    fontWeight: 700,
+                                                                }}
+                                                            >
                                                                 복사됨 ✓
                                                             </span>
                                                         ) : link ? (
@@ -1366,12 +1408,16 @@ export function TaskDetailModal({
                                                                 href={link}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
-                                                                onClick={(e) => e.stopPropagation()}
+                                                                onClick={(e) =>
+                                                                    e.stopPropagation()
+                                                                }
                                                                 style={{
                                                                     color: "#1ED67D",
                                                                     fontWeight: 600,
-                                                                    textDecoration: "none",
-                                                                    wordBreak: "break-all",
+                                                                    textDecoration:
+                                                                        "none",
+                                                                    wordBreak:
+                                                                        "break-all",
                                                                 }}
                                                             >
                                                                 {value} ↗
@@ -1648,7 +1694,10 @@ export function TaskDetailModal({
                                             type="url"
                                             value={form.consult_link}
                                             onChange={(e) =>
-                                                set("consult_link", e.target.value)
+                                                set(
+                                                    "consult_link",
+                                                    e.target.value,
+                                                )
                                             }
                                             placeholder="https://..."
                                             style={inp(false)}
@@ -2034,8 +2083,17 @@ function BoardTable({
                                     try {
                                         const oldNameMap = new Map(
                                             tasks
-                                                .filter((t) => checked.has(t.id))
-                                                .map((t) => [t.id, (t.designer as { name: string } | null)?.name ?? null]),
+                                                .filter((t) =>
+                                                    checked.has(t.id),
+                                                )
+                                                .map((t) => [
+                                                    t.id,
+                                                    (
+                                                        t.designer as {
+                                                            name: string;
+                                                        } | null
+                                                    )?.name ?? null,
+                                                ]),
                                         );
                                         await clientBulkUpdateDesigner(
                                             Array.from(checked),
@@ -2271,28 +2329,42 @@ function BoardTable({
                                                 ⚠
                                             </span>
                                         )}
-                                        {task.order_method && (() => {
-                                            const isPrintOnly =
-                                                task.order_method === "인쇄만" ||
-                                                task.order_method === "재주문(수정X)";
-                                            return (
-                                                <span
-                                                    style={{
-                                                        fontSize: 11,
-                                                        color: isPrintOnly ? "#dc2626" : "#6b7280",
-                                                        background: isPrintOnly ? "#fef2f2" : "#f3f4f6",
-                                                        border: isPrintOnly ? "1px solid #fecaca" : "none",
-                                                        padding: "1px 6px",
-                                                        borderRadius: 4,
-                                                        whiteSpace: "nowrap",
-                                                        flexShrink: 0,
-                                                        fontWeight: isPrintOnly ? 700 : 400,
-                                                    }}
-                                                >
-                                                    {task.order_method}
-                                                </span>
-                                            );
-                                        })()}
+                                        {task.order_method &&
+                                            (() => {
+                                                const isPrintOnly =
+                                                    task.order_method ===
+                                                        "인쇄만 의뢰" ||
+                                                    task.order_method ===
+                                                        "재주문(수정X)";
+                                                return (
+                                                    <span
+                                                        style={{
+                                                            fontSize: 11,
+                                                            color: isPrintOnly
+                                                                ? "#dc2626"
+                                                                : "#6b7280",
+                                                            background:
+                                                                isPrintOnly
+                                                                    ? "#fef2f2"
+                                                                    : "#f3f4f6",
+                                                            border: isPrintOnly
+                                                                ? "1px solid #fecaca"
+                                                                : "none",
+                                                            padding: "1px 6px",
+                                                            borderRadius: 4,
+                                                            whiteSpace:
+                                                                "nowrap",
+                                                            flexShrink: 0,
+                                                            fontWeight:
+                                                                isPrintOnly
+                                                                    ? 700
+                                                                    : 400,
+                                                        }}
+                                                    >
+                                                        {task.order_method}
+                                                    </span>
+                                                );
+                                            })()}
                                         <span
                                             style={{
                                                 color: "#9ca3af",

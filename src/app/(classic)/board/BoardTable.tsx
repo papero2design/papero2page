@@ -2258,20 +2258,7 @@ function BoardTable({
                     >
                         선택 삭제
                     </button>
-                    {hasChecked && (
-                        <button
-                            className="bo-btn"
-                            disabled={isPending}
-                            onClick={() => setBulkCompleteConfirm(true)}
-                            style={{
-                                background: "#f0fdf4",
-                                color: "#15803d",
-                                border: "1px solid #bbf7d0",
-                            }}
-                        >
-                            전체 완료
-                        </button>
-                    )}
+
                     {hasChecked && designers.length > 0 && (
                         <BulkDesignerSelect
                             designers={designers}
@@ -2317,7 +2304,30 @@ function BoardTable({
                         </span>
                     )}
                 </div>
-                <div>{writeButton}</div>
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        flexWrap: "wrap",
+                    }}
+                >
+                    {writeButton}
+                    {hasChecked && (
+                        <button
+                            className="bo-btn"
+                            disabled={isPending}
+                            onClick={() => setBulkCompleteConfirm(true)}
+                            style={{
+                                background: "#f0fdf4",
+                                color: "#15803d",
+                                border: "1px solid #bbf7d0",
+                            }}
+                        >
+                            선택 완료
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* 테이블 */}
@@ -2398,8 +2408,10 @@ function BoardTable({
                         const hasAlert = !!task.special_details;
                         const isChecked = checked.has(task.id);
                         const currDate = fmtDate(task.created_at);
-                        const prevDate = i > 0 ? fmtDate(tasks[i - 1].created_at) : null;
-                        const showDateDivider = prevDate !== null && prevDate !== currDate;
+                        const prevDate =
+                            i > 0 ? fmtDate(tasks[i - 1].created_at) : null;
+                        const showDateDivider =
+                            prevDate !== null && prevDate !== currDate;
 
                         return (
                             <Fragment key={task.id}>
@@ -2415,270 +2427,280 @@ function BoardTable({
                                         />
                                     </tr>
                                 )}
-                            <tr
-                                style={{
-                                    ...styles.row,
-                                    borderLeft: task.is_priority
-                                        ? "3px solid #ef4444"
-                                        : "3px solid transparent",
-                                    background: isChecked
-                                        ? "#f0fdf4"
-                                        : highlightPriorityRows &&
-                                            task.is_priority
-                                          ? "#fff7f7"
-                                          : "#fff",
-                                }}
-                                onMouseEnter={(e) => {
-                                    (
-                                        e.currentTarget as HTMLElement
-                                    ).style.background = isChecked
-                                        ? "#dcfce7"
-                                        : "#f9fafb";
-                                }}
-                                onMouseLeave={(e) => {
-                                    (
-                                        e.currentTarget as HTMLElement
-                                    ).style.background = isChecked
-                                        ? "#f0fdf4"
-                                        : highlightPriorityRows &&
-                                            task.is_priority
-                                          ? "#fff7f7"
-                                          : "#fff";
-                                }}
-                            >
-                                {/* 체크박스 */}
-                                <td
-                                    onClick={() => toggleCheck(task.id)}
+                                <tr
                                     style={{
-                                        ...styles.td,
-                                        width: 36,
-                                        textAlign: "center",
-                                        cursor: "pointer",
+                                        ...styles.row,
+                                        borderLeft: task.is_priority
+                                            ? "3px solid #ef4444"
+                                            : "3px solid transparent",
                                         background: isChecked
+                                            ? "#f0fdf4"
+                                            : highlightPriorityRows &&
+                                                task.is_priority
+                                              ? "#fff7f7"
+                                              : "#fff",
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        (
+                                            e.currentTarget as HTMLElement
+                                        ).style.background = isChecked
                                             ? "#dcfce7"
-                                            : "#f9fafb",
+                                            : "#f9fafb";
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        (
+                                            e.currentTarget as HTMLElement
+                                        ).style.background = isChecked
+                                            ? "#f0fdf4"
+                                            : highlightPriorityRows &&
+                                                task.is_priority
+                                              ? "#fff7f7"
+                                              : "#fff";
                                     }}
                                 >
-                                    <input
-                                        type="checkbox"
-                                        checked={isChecked}
-                                        onChange={() => toggleCheck(task.id)}
-                                        onClick={(e) => e.stopPropagation()}
+                                    {/* 체크박스 */}
+                                    <td
+                                        onClick={() => toggleCheck(task.id)}
                                         style={{
+                                            ...styles.td,
+                                            width: 36,
+                                            textAlign: "center",
                                             cursor: "pointer",
-                                            width: 14,
-                                            height: 14,
-                                        }}
-                                    />
-                                </td>
-
-                                {/* 순번 */}
-                                <td
-                                    onClick={() => toggleCheck(task.id)}
-                                    style={{
-                                        ...styles.td,
-                                        width: 52,
-                                        textAlign: "center",
-                                        cursor: "pointer",
-                                        color: "#9ca3af",
-                                        fontSize: 12,
-                                        background: isChecked
-                                            ? "#dcfce7"
-                                            : "#f9fafb",
-                                    }}
-                                >
-                                    {total - from - i}
-                                </td>
-
-                                {/* 내용 */}
-                                <td
-                                    style={{
-                                        ...styles.td,
-                                        paddingLeft: 15,
-                                    }}
-                                >
-                                    <div
-                                        style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: 6,
-                                            flexWrap: "wrap",
+                                            background: isChecked
+                                                ? "#dcfce7"
+                                                : "#f9fafb",
                                         }}
                                     >
-                                        <span
+                                        <input
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            onChange={() =>
+                                                toggleCheck(task.id)
+                                            }
+                                            onClick={(e) => e.stopPropagation()}
                                             style={{
-                                                fontWeight: 700,
-                                                color: task.is_priority
-                                                    ? "#dc2626"
-                                                    : "#111827",
                                                 cursor: "pointer",
+                                                width: 14,
+                                                height: 14,
                                             }}
-                                            onClick={() => setModalTask(task)}
-                                        >
-                                            {task.customer_name}
-                                        </span>
-                                        {hasAlert && (
-                                            <span
-                                                style={baseBadge(
-                                                    "#fef2f2",
-                                                    "#ef4444",
-                                                    "#fecaca",
-                                                )}
-                                            >
-                                                ⚠
-                                            </span>
-                                        )}
-                                        {task.order_method &&
-                                            (() => {
-                                                const isPrintOnly =
-                                                    task.order_method ===
-                                                        "인쇄만 의뢰" ||
-                                                    task.order_method ===
-                                                        "재주문(수정없는)";
-                                                return (
-                                                    <span
-                                                        style={{
-                                                            fontSize: 12,
-                                                            color: isPrintOnly
-                                                                ? "#1d4ed8"
-                                                                : "#374151",
-                                                            background:
-                                                                isPrintOnly
-                                                                    ? "#eff6ff"
-                                                                    : "#f3f4f6",
-                                                            border: `1px solid ${isPrintOnly ? "#bfdbfe" : "#e5e7eb"}`,
-                                                            padding: "2px 7px",
-                                                            borderRadius: 4,
-                                                            whiteSpace:
-                                                                "nowrap",
-                                                            flexShrink: 0,
-                                                            fontWeight: 600,
-                                                        }}
-                                                    >
-                                                        {task.order_method}
-                                                    </span>
-                                                );
-                                            })()}
-                                        <span
+                                        />
+                                    </td>
+
+                                    {/* 순번 */}
+                                    <td
+                                        onClick={() => toggleCheck(task.id)}
+                                        style={{
+                                            ...styles.td,
+                                            width: 52,
+                                            textAlign: "center",
+                                            cursor: "pointer",
+                                            color: "#9ca3af",
+                                            fontSize: 12,
+                                            background: isChecked
+                                                ? "#dcfce7"
+                                                : "#f9fafb",
+                                        }}
+                                    >
+                                        {total - from - i}
+                                    </td>
+
+                                    {/* 내용 */}
+                                    <td
+                                        style={{
+                                            ...styles.td,
+                                            paddingLeft: 15,
+                                        }}
+                                    >
+                                        <div
                                             style={{
-                                                color: "#9ca3af",
-                                                cursor: "pointer",
-                                            }}
-                                            onClick={() => setModalTask(task)}
-                                        >
-                                            {task.print_items}
-                                        </span>
-                                        {task.post_processing &&
-                                            task.post_processing !== "없음" && (
-                                                <span
-                                                    style={baseBadge(
-                                                        "#faf5ff",
-                                                        "#7c3aed",
-                                                        "#e9d5ff",
-                                                    )}
-                                                >
-                                                    후가공
-                                                </span>
-                                            )}
-                                        {task.print_items &&
-                                            task.print_items.includes(
-                                                "약도",
-                                            ) && (
-                                                <span
-                                                    style={baseBadge(
-                                                        "#fff7ed",
-                                                        "#ea580c",
-                                                        "#fed7aa",
-                                                    )}
-                                                >
-                                                    약도
-                                                </span>
-                                            )}
-                                        {task.status === "완료" && (
-                                            <span
-                                                style={{
-                                                    fontSize: 11,
-                                                    padding: "1px 7px",
-                                                    borderRadius: 99,
-                                                    background: "#f0fdf4",
-                                                    color: "#15803d",
-                                                    border: "1px solid #bbf7d0",
-                                                    fontWeight: 700,
-                                                    whiteSpace: "nowrap",
-                                                    flexShrink: 0,
-                                                }}
-                                            >
-                                                완료
-                                            </span>
-                                        )}
-                                        {task.designer?.name ? (
-                                            <span
-                                                style={{
-                                                    fontSize: 11,
-                                                    padding: "1px 7px",
-                                                    borderRadius: 99,
-                                                    background: "#eff6ff",
-                                                    color: "#1d4ed8",
-                                                    border: "1px solid #bfdbfe",
-                                                    fontWeight: 600,
-                                                    whiteSpace: "nowrap",
-                                                    flexShrink: 0,
-                                                }}
-                                            >
-                                                {task.designer.name}
-                                            </span>
-                                        ) : (
-                                            <span
-                                                style={{
-                                                    fontSize: 11,
-                                                    color: "#d1d5db",
-                                                    whiteSpace: "nowrap",
-                                                    flexShrink: 0,
-                                                }}
-                                            >
-                                                미배정
-                                            </span>
-                                        )}
-                                        <button
-                                            type="button"
-                                            onClick={() => setModalTask(task)}
-                                            title="자세히 보기"
-                                            style={{
-                                                marginLeft: "auto",
-                                                background: "none",
-                                                border: "none",
-                                                cursor: "pointer",
-                                                color: "#9ca3af",
-                                                padding: "0 2px",
-                                                lineHeight: 1,
                                                 display: "flex",
                                                 alignItems: "center",
+                                                gap: 6,
+                                                flexWrap: "wrap",
                                             }}
                                         >
-                                            ↗
-                                        </button>
-                                    </div>
-                                </td>
+                                            <span
+                                                style={{
+                                                    fontWeight: 700,
+                                                    color: task.is_priority
+                                                        ? "#dc2626"
+                                                        : "#111827",
+                                                    cursor: "pointer",
+                                                }}
+                                                onClick={() =>
+                                                    setModalTask(task)
+                                                }
+                                            >
+                                                {task.customer_name}
+                                            </span>
+                                            {hasAlert && (
+                                                <span
+                                                    style={baseBadge(
+                                                        "#fef2f2",
+                                                        "#ef4444",
+                                                        "#fecaca",
+                                                    )}
+                                                >
+                                                    ⚠
+                                                </span>
+                                            )}
+                                            {task.order_method &&
+                                                (() => {
+                                                    const isPrintOnly =
+                                                        task.order_method ===
+                                                            "인쇄만 의뢰" ||
+                                                        task.order_method ===
+                                                            "재주문(수정없는)";
+                                                    return (
+                                                        <span
+                                                            style={{
+                                                                fontSize: 12,
+                                                                color: isPrintOnly
+                                                                    ? "#1d4ed8"
+                                                                    : "#374151",
+                                                                background:
+                                                                    isPrintOnly
+                                                                        ? "#eff6ff"
+                                                                        : "#f3f4f6",
+                                                                border: `1px solid ${isPrintOnly ? "#bfdbfe" : "#e5e7eb"}`,
+                                                                padding:
+                                                                    "2px 7px",
+                                                                borderRadius: 4,
+                                                                whiteSpace:
+                                                                    "nowrap",
+                                                                flexShrink: 0,
+                                                                fontWeight: 600,
+                                                            }}
+                                                        >
+                                                            {task.order_method}
+                                                        </span>
+                                                    );
+                                                })()}
+                                            <span
+                                                style={{
+                                                    color: "#9ca3af",
+                                                    cursor: "pointer",
+                                                }}
+                                                onClick={() =>
+                                                    setModalTask(task)
+                                                }
+                                            >
+                                                {task.print_items}
+                                            </span>
+                                            {task.post_processing &&
+                                                task.post_processing !==
+                                                    "없음" && (
+                                                    <span
+                                                        style={baseBadge(
+                                                            "#faf5ff",
+                                                            "#7c3aed",
+                                                            "#e9d5ff",
+                                                        )}
+                                                    >
+                                                        후가공
+                                                    </span>
+                                                )}
+                                            {task.print_items &&
+                                                task.print_items.includes(
+                                                    "약도",
+                                                ) && (
+                                                    <span
+                                                        style={baseBadge(
+                                                            "#fff7ed",
+                                                            "#ea580c",
+                                                            "#fed7aa",
+                                                        )}
+                                                    >
+                                                        약도
+                                                    </span>
+                                                )}
+                                            {task.status === "완료" && (
+                                                <span
+                                                    style={{
+                                                        fontSize: 11,
+                                                        padding: "1px 7px",
+                                                        borderRadius: 99,
+                                                        background: "#f0fdf4",
+                                                        color: "#15803d",
+                                                        border: "1px solid #bbf7d0",
+                                                        fontWeight: 700,
+                                                        whiteSpace: "nowrap",
+                                                        flexShrink: 0,
+                                                    }}
+                                                >
+                                                    완료
+                                                </span>
+                                            )}
+                                            {task.designer?.name ? (
+                                                <span
+                                                    style={{
+                                                        fontSize: 11,
+                                                        padding: "1px 7px",
+                                                        borderRadius: 99,
+                                                        background: "#eff6ff",
+                                                        color: "#1d4ed8",
+                                                        border: "1px solid #bfdbfe",
+                                                        fontWeight: 600,
+                                                        whiteSpace: "nowrap",
+                                                        flexShrink: 0,
+                                                    }}
+                                                >
+                                                    {task.designer.name}
+                                                </span>
+                                            ) : (
+                                                <span
+                                                    style={{
+                                                        fontSize: 11,
+                                                        color: "#d1d5db",
+                                                        whiteSpace: "nowrap",
+                                                        flexShrink: 0,
+                                                    }}
+                                                >
+                                                    미배정
+                                                </span>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setModalTask(task)
+                                                }
+                                                title="자세히 보기"
+                                                style={{
+                                                    marginLeft: "auto",
+                                                    background: "none",
+                                                    border: "none",
+                                                    cursor: "pointer",
+                                                    color: "#9ca3af",
+                                                    padding: "0 2px",
+                                                    lineHeight: 1,
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                }}
+                                            >
+                                                ↗
+                                            </button>
+                                        </div>
+                                    </td>
 
-                                {/* 날짜 / 담당 */}
-                                <td
-                                    onClick={() => setModalTask(task)}
-                                    style={{
-                                        ...styles.td,
-                                        width: 90,
-                                        textAlign: "center",
-                                        color: "#9ca3af",
-                                        whiteSpace: "nowrap",
-                                        cursor: "pointer",
-                                    }}
-                                >
-                                    {fmtDate(task.created_at)}
-                                    <br />
-                                    <span style={{ color: "#c4c4c4" }}>
-                                        {fmtTime(task.created_at)}
-                                    </span>
-                                </td>
-                            </tr>
+                                    {/* 날짜 / 담당 */}
+                                    <td
+                                        onClick={() => setModalTask(task)}
+                                        style={{
+                                            ...styles.td,
+                                            width: 90,
+                                            textAlign: "center",
+                                            color: "#9ca3af",
+                                            whiteSpace: "nowrap",
+                                            cursor: "pointer",
+                                        }}
+                                    >
+                                        {fmtDate(task.created_at)}
+                                        <br />
+                                        <span style={{ color: "#c4c4c4" }}>
+                                            {fmtTime(task.created_at)}
+                                        </span>
+                                    </td>
+                                </tr>
                             </Fragment>
                         );
                     })}
@@ -2757,7 +2779,11 @@ function FloatingNav({ from, total }: { from: number; total: number }) {
                 ↑
             </button>
             {totalPages > 1 && page > 1 && (
-                <Link href={pageUrl(page - 1)} style={btnStyle} title="이전 페이지">
+                <Link
+                    href={pageUrl(page - 1)}
+                    style={btnStyle}
+                    title="이전 페이지"
+                >
                     ‹
                 </Link>
             )}
@@ -2779,7 +2805,11 @@ function FloatingNav({ from, total }: { from: number; total: number }) {
                 </span>
             )}
             {totalPages > 1 && page < totalPages && (
-                <Link href={pageUrl(page + 1)} style={btnStyle} title="다음 페이지">
+                <Link
+                    href={pageUrl(page + 1)}
+                    style={btnStyle}
+                    title="다음 페이지"
+                >
                     ›
                 </Link>
             )}

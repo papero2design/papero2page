@@ -1388,6 +1388,18 @@ export function TaskDetailModal({
                                                     : null;
                                             const canCopyBracket =
                                                 !!bracketMatch;
+                                            // 처리특이사항: td 클릭 시 스)...파일명 복사
+                                            const isSpecial =
+                                                label === "처리특이사항";
+                                            const backupMatch =
+                                                isSpecial && value
+                                                    ? value.match(/스\).+/)
+                                                    : null;
+                                            const backupCopyText = backupMatch
+                                                ? backupMatch[0].trim()
+                                                : null;
+                                            const canCopyBackup =
+                                                !!backupCopyText;
                                             return (
                                                 <tr
                                                     key={label}
@@ -1475,7 +1487,28 @@ export function TaskDetailModal({
                                                                               },
                                                                           );
                                                                   }
-                                                                : undefined
+                                                                : canCopyBackup
+                                                                  ? () => {
+                                                                        navigator.clipboard
+                                                                            .writeText(
+                                                                                backupCopyText!,
+                                                                            )
+                                                                            .then(
+                                                                                () => {
+                                                                                    setCopiedTdKey(
+                                                                                        label,
+                                                                                    );
+                                                                                    setTimeout(
+                                                                                        () =>
+                                                                                            setCopiedTdKey(
+                                                                                                null,
+                                                                                            ),
+                                                                                        1500,
+                                                                                    );
+                                                                                },
+                                                                            );
+                                                                    }
+                                                                  : undefined
                                                         }
                                                         style={{
                                                             padding: "9px 16px",
@@ -1493,9 +1526,11 @@ export function TaskDetailModal({
                                                                 "top",
                                                             transition:
                                                                 "color 0.15s",
-                                                            cursor: canCopyBracket
-                                                                ? "pointer"
-                                                                : "default",
+                                                            cursor:
+                                                                canCopyBracket ||
+                                                                canCopyBackup
+                                                                    ? "pointer"
+                                                                    : "default",
                                                         }}
                                                     >
                                                         {link ? (

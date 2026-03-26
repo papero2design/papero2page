@@ -10,7 +10,7 @@ import {
     Fragment,
 } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { TaskWithDesigner } from "@/types/database";
 import { deleteTaskFile } from "./actions";
 import {
@@ -32,6 +32,13 @@ import { useToast } from "./Toast";
 // ─────────────────────────────────────────────────────────────
 // 상수 & 타입
 // ─────────────────────────────────────────────────────────────
+
+const TASK_SELECT =
+    "id, task_number, order_source, customer_name, order_method, order_method_note, " +
+    "print_items, post_processing, file_paths, " +
+    "consult_path, consult_link, special_details, registered_by, " +
+    "status, is_priority, is_quick, created_at, deleted_at, " +
+    "designer:designers(id, name)";
 
 const STATUSES = ["작업중", "완료"] as const;
 type Status = (typeof STATUSES)[number];
@@ -725,6 +732,7 @@ export function TaskDetailModal({
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [copiedKey, setCopiedKey] = useState<string | null>(null);
     const [copiedTdKey, setCopiedTdKey] = useState<string | null>(null);
+    const [linkCopied, setLinkCopied] = useState(false);
     const [isPending, startTransition] = useTransition();
     const blockCloseRef = useRef(false);
     const [newFiles, setNewFiles] = useState<File[]>([]);
@@ -1217,18 +1225,54 @@ export function TaskDetailModal({
                                 </span>
                             )}
                         </div>
-                        <button
-                            onClick={onClose}
-                            style={{
-                                background: "none",
-                                border: "none",
-                                cursor: "pointer",
-                                color: "#9ca3af",
-                                padding: "2px 4px",
-                            }}
-                        >
-                            ✕
-                        </button>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <button
+                                onClick={() => {
+                                    navigator.clipboard.writeText(window.location.href).then(() => {
+                                        setLinkCopied(true);
+                                        setTimeout(() => setLinkCopied(false), 1500);
+                                    });
+                                }}
+                                title="링크 복사"
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    width: 30,
+                                    height: 30,
+                                    borderRadius: "50%",
+                                    border: `1px solid ${linkCopied ? "#bbf7d0" : "#e5e7eb"}`,
+                                    background: linkCopied ? "#f0fdf4" : "#f9fafb",
+                                    cursor: "pointer",
+                                    color: linkCopied ? "#15803d" : "#6b7280",
+                                    transition: "all 0.15s",
+                                    flexShrink: 0,
+                                }}
+                            >
+                                {linkCopied ? (
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <polyline points="20 6 9 17 4 12" />
+                                    </svg>
+                                ) : (
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                                    </svg>
+                                )}
+                            </button>
+                            <button
+                                onClick={onClose}
+                                style={{
+                                    background: "none",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    color: "#9ca3af",
+                                    padding: "2px 4px",
+                                }}
+                            >
+                                ✕
+                            </button>
+                        </div>
                     </div>
 
                     {/* 탭 */}
@@ -2196,6 +2240,45 @@ function BoardTable({
     const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
     const [bulkCompleteConfirm, setBulkCompleteConfirm] = useState(false);
     const { showToast, ToastUI } = useToast();
+    const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
+
+    // 공유 링크: 마운트 시 URL의 task param으로 모달 자동 오픈
+    useEffect(() => {
+        const taskId = searchParams.get("task");
+        if (!taskId) return;
+        const existing = tasks.find((t) => t.id === taskId);
+        if (existing) {
+            setModalTask(existing);
+            return;
+        }
+        // 현재 페이지에 없으면 DB에서 직접 단건 fetch
+        createClient()
+            .from("tasks")
+            .select(TASK_SELECT)
+            .eq("id", taskId)
+            .is("deleted_at", null)
+            .single()
+            .then(({ data }) => {
+                if (data) setModalTask(data as unknown as TaskWithDesigner);
+            });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const openModal = (task: TaskWithDesigner) => {
+        setModalTask(task);
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("task", task.id);
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    };
+
+    const closeModal = () => {
+        setModalTask(null);
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete("task");
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    };
 
     const toggleCheck = (id: string) =>
         setChecked((prev) => {
@@ -2563,7 +2646,7 @@ function BoardTable({
                                                     cursor: "pointer",
                                                 }}
                                                 onClick={() =>
-                                                    setModalTask(task)
+                                                    openModal(task)
                                                 }
                                             >
                                                 {task.customer_name}
@@ -2617,7 +2700,7 @@ function BoardTable({
                                                     cursor: "pointer",
                                                 }}
                                                 onClick={() =>
-                                                    setModalTask(task)
+                                                    openModal(task)
                                                 }
                                             >
                                                 {task.print_items}
@@ -2697,7 +2780,7 @@ function BoardTable({
                                             <button
                                                 type="button"
                                                 onClick={() =>
-                                                    setModalTask(task)
+                                                    openModal(task)
                                                 }
                                                 title="자세히 보기"
                                                 style={{
@@ -2719,7 +2802,7 @@ function BoardTable({
 
                                     {/* 날짜 / 담당 */}
                                     <td
-                                        onClick={() => setModalTask(task)}
+                                        onClick={() => openModal(task)}
                                         style={{
                                             ...styles.td,
                                             width: 90,
@@ -2745,8 +2828,8 @@ function BoardTable({
             {modalTask && (
                 <TaskDetailModal
                     task={modalTask}
-                    onClose={() => setModalTask(null)}
-                    onDeleted={() => setModalTask(null)}
+                    onClose={closeModal}
+                    onDeleted={closeModal}
                     designers={designers}
                     canEditDesigner={canEditDesigner}
                     onMutate={onMutate}

@@ -183,6 +183,31 @@ export async function clientDeleteTasks(ids: string[], reason?: string | null) {
     );
 }
 
+// ── 일괄 완료 ─────────────────────────────────────────────────
+export async function clientBulkComplete(
+    ids: string[],
+    oldStatuses: Map<string, string>,
+) {
+    if (!ids.length) return;
+    const { supabase, userId, userName } = await withUser();
+    const now = new Date().toISOString();
+
+    const { error } = await supabase
+        .from("tasks")
+        .update({ status: "완료", completed_at: now })
+        .in("id", ids);
+    if (error) throw new Error(`일괄 완료 실패: ${error.message}`);
+
+    await Promise.all(
+        ids.map((id) =>
+            insertLog(
+                supabase, id, userId, userName,
+                "status", oldStatuses.get(id) ?? "작업중", "완료", "일괄완료",
+            ),
+        ),
+    );
+}
+
 // ── 일괄 담당 디자이너 변경 ────────────────────────────────────
 // oldNameMap은 이미 렌더된 tasks에서 직접 구축 → 추가 DB 쿼리 없음
 export async function clientBulkUpdateDesigner(

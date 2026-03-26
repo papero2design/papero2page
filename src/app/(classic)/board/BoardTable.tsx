@@ -7,7 +7,10 @@ import {
     useCallback,
     useRef,
     memo,
+    Fragment,
 } from "react";
+import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import { TaskWithDesigner } from "@/types/database";
 import { deleteTaskFile } from "./actions";
 import {
@@ -17,6 +20,7 @@ import {
     clientDeleteTask,
     clientDeleteTasks,
     clientBulkUpdateDesigner,
+    clientBulkComplete,
     clientTogglePriority,
     type LogEntry,
 } from "./clientMutations";
@@ -1494,27 +1498,7 @@ export function TaskDetailModal({
                                                                 : "default",
                                                         }}
                                                     >
-                                                        {isCopied ? (
-                                                            <span
-                                                                style={{
-                                                                    fontWeight: 700,
-                                                                }}
-                                                            >
-                                                                복사됨 ✓
-                                                            </span>
-                                                        ) : isTdCopied ? (
-                                                            <span
-                                                                style={{
-                                                                    fontWeight: 700,
-                                                                    color: "#7c3aed",
-                                                                }}
-                                                            >
-                                                                {
-                                                                    bracketMatch![1]
-                                                                }{" "}
-                                                                ✓
-                                                            </span>
-                                                        ) : link ? (
+                                                        {link ? (
                                                             <a
                                                                 href={link}
                                                                 target="_blank"
@@ -2175,6 +2159,7 @@ function BoardTable({
     const [modalTask, setModalTask] = useState<TaskWithDesigner | null>(null);
     const [isPending, startTransition] = useTransition();
     const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+    const [bulkCompleteConfirm, setBulkCompleteConfirm] = useState(false);
     const { showToast, ToastUI } = useToast();
 
     const toggleCheck = (id: string) =>
@@ -2204,6 +2189,24 @@ function BoardTable({
         });
     };
 
+    const handleBulkComplete = () => {
+        setBulkCompleteConfirm(false);
+        startTransition(async () => {
+            try {
+                const oldStatuses = new Map(
+                    tasks
+                        .filter((t) => checked.has(t.id))
+                        .map((t) => [t.id, t.status as string]),
+                );
+                await clientBulkComplete(Array.from(checked), oldStatuses);
+                setChecked(new Set());
+                onMutate?.();
+            } catch (err) {
+                showToast("일괄 완료 실패: " + (err as Error).message);
+            }
+        });
+    };
+
     const hasChecked = checked.size > 0;
 
     return (
@@ -2216,6 +2219,14 @@ function BoardTable({
                     danger
                     onConfirm={handleBulkDelete}
                     onCancel={() => setBulkDeleteConfirm(false)}
+                />
+            )}
+            {bulkCompleteConfirm && (
+                <ConfirmDialog
+                    message={`선택한 ${checked.size}건을 완료로 이동할까요?`}
+                    confirmLabel={`${checked.size}건 완료`}
+                    onConfirm={handleBulkComplete}
+                    onCancel={() => setBulkCompleteConfirm(false)}
                 />
             )}
 
@@ -2247,6 +2258,20 @@ function BoardTable({
                     >
                         선택 삭제
                     </button>
+                    {hasChecked && (
+                        <button
+                            className="bo-btn"
+                            disabled={isPending}
+                            onClick={() => setBulkCompleteConfirm(true)}
+                            style={{
+                                background: "#f0fdf4",
+                                color: "#15803d",
+                                border: "1px solid #bbf7d0",
+                            }}
+                        >
+                            전체 완료
+                        </button>
+                    )}
                     {hasChecked && designers.length > 0 && (
                         <BulkDesignerSelect
                             designers={designers}
@@ -2372,10 +2397,25 @@ function BoardTable({
                     {tasks.map((task, i) => {
                         const hasAlert = !!task.special_details;
                         const isChecked = checked.has(task.id);
+                        const currDate = fmtDate(task.created_at);
+                        const prevDate = i > 0 ? fmtDate(tasks[i - 1].created_at) : null;
+                        const showDateDivider = prevDate !== null && prevDate !== currDate;
 
                         return (
+                            <Fragment key={task.id}>
+                                {showDateDivider && (
+                                    <tr>
+                                        <td
+                                            colSpan={4}
+                                            style={{
+                                                padding: 0,
+                                                height: 0,
+                                                borderTop: "2px solid #fca5a5",
+                                            }}
+                                        />
+                                    </tr>
+                                )}
                             <tr
-                                key={task.id}
                                 style={{
                                     ...styles.row,
                                     borderLeft: task.is_priority
@@ -2639,6 +2679,7 @@ function BoardTable({
                                     </span>
                                 </td>
                             </tr>
+                            </Fragment>
                         );
                     })}
                 </tbody>
@@ -2654,7 +2695,107 @@ function BoardTable({
                     onMutate={onMutate}
                 />
             )}
+            <FloatingNav from={from} total={total} />
         </>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────
+// 플로팅 네비게이션
+// ─────────────────────────────────────────────────────────────
+
+const PAGE_SIZE = 15;
+
+function FloatingNav({ from, total }: { from: number; total: number }) {
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
+    const page = Math.floor(from / PAGE_SIZE) + 1;
+    const totalPages = Math.ceil(total / PAGE_SIZE);
+
+    const pageUrl = (p: number) => {
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("page", String(p));
+        return `${pathname}?${params.toString()}`;
+    };
+
+    const btnStyle: React.CSSProperties = {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 32,
+        height: 32,
+        borderRadius: 8,
+        background: "#fff",
+        border: "1px solid #e5e7eb",
+        color: "#374151",
+        fontSize: 15,
+        cursor: "pointer",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+        textDecoration: "none",
+        lineHeight: 1,
+    };
+
+    return (
+        <div
+            style={{
+                position: "fixed",
+                right: 18,
+                top: "50%",
+                transform: "translateY(-50%)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 6,
+                zIndex: 200,
+            }}
+        >
+            <button
+                style={btnStyle}
+                title="맨 위로"
+                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+            >
+                ↑
+            </button>
+            {totalPages > 1 && page > 1 && (
+                <Link href={pageUrl(page - 1)} style={btnStyle} title="이전 페이지">
+                    ‹
+                </Link>
+            )}
+            {totalPages > 1 && (
+                <span
+                    style={{
+                        ...btnStyle,
+                        cursor: "default",
+                        flexDirection: "column",
+                        fontSize: 11,
+                        lineHeight: 1.3,
+                        gap: 0,
+                        height: "auto",
+                        padding: "4px 0",
+                    }}
+                >
+                    <span style={{ fontWeight: 700 }}>{page}</span>
+                    <span style={{ color: "#9ca3af" }}>/{totalPages}</span>
+                </span>
+            )}
+            {totalPages > 1 && page < totalPages && (
+                <Link href={pageUrl(page + 1)} style={btnStyle} title="다음 페이지">
+                    ›
+                </Link>
+            )}
+            <button
+                style={btnStyle}
+                title="맨 아래로"
+                onClick={() =>
+                    window.scrollTo({
+                        top: document.body.scrollHeight,
+                        behavior: "smooth",
+                    })
+                }
+            >
+                ↓
+            </button>
+        </div>
     );
 }
 

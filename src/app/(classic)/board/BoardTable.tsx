@@ -739,7 +739,6 @@ export function TaskDetailModal({
     }>({ show: false, target: null });
     const [priorityModal, setPriorityModal] = useState(false);
     const [deleteConfirm, setDeleteConfirm] = useState(false);
-    const [completeConfirm, setCompleteConfirm] = useState(false);
 
     const parsedPP = parsePostProc(task.post_processing);
 
@@ -813,6 +812,7 @@ export function TaskDetailModal({
                 );
                 setCurrentStatus(newStatus);
                 onMutate?.();
+                if (newStatus === "완료") onClose();
             } catch (err) {
                 showToast("상태 변경 실패: " + (err as Error).message);
             }
@@ -1091,17 +1091,6 @@ export function TaskDetailModal({
                     danger
                     onConfirm={handleDelete}
                     onCancel={() => setDeleteConfirm(false)}
-                />
-            )}
-            {completeConfirm && (
-                <ConfirmDialog
-                    message={`"${task.customer_name}" 작업을 완료로 이동할까요?`}
-                    confirmLabel="이동"
-                    onConfirm={() => {
-                        setCompleteConfirm(false);
-                        handleComplete();
-                    }}
-                    onCancel={() => setCompleteConfirm(false)}
                 />
             )}
             {statusModal.show && statusModal.target && (
@@ -2115,9 +2104,7 @@ export function TaskDetailModal({
                                     </button>
                                     {currentStatus !== "완료" && (
                                         <button
-                                            onClick={() =>
-                                                setCompleteConfirm(true)
-                                            }
+                                            onClick={handleComplete}
                                             disabled={isPending}
                                             style={{
                                                 padding: "6px 16px",
@@ -2133,7 +2120,7 @@ export function TaskDetailModal({
                                                 opacity: isPending ? 0.7 : 1,
                                             }}
                                         >
-                                            이동
+                                            완료
                                         </button>
                                     )}
                                 </>
@@ -2702,7 +2689,8 @@ function BulkDesignerSelect({
     onAssign: (id: string | null, name: string | null) => void;
 }) {
     const [order, setOrder] = useState<string[]>([]);
-    const [sorted, setSorted] = useState<{ id: string; name: string }[]>(designers);
+    const [sorted, setSorted] =
+        useState<{ id: string; name: string }[]>(designers);
 
     useEffect(() => {
         const supabase = createClient();
@@ -2712,7 +2700,9 @@ function BulkDesignerSelect({
             .eq("key", "designer_tab_order")
             .single()
             .then(({ data }) => {
-                const o: string[] = Array.isArray(data?.value) ? data.value : [];
+                const o: string[] = Array.isArray(data?.value)
+                    ? data.value
+                    : [];
                 setOrder(o);
             });
     }, []);

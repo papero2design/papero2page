@@ -290,6 +290,67 @@ export async function hardDeleteDesigner(id: string) {
     revalidatePath("/board");
 }
 
+// ── 디자이너 role 변경 (admin ↔ designer) ────────────────────
+export async function updateDesignerRole(
+    userId: string,
+    newRole: "admin" | "designer",
+) {
+    await assertAdmin();
+    const adminClient = createAdminClient();
+
+    const { error } = await adminClient
+        .from("profiles")
+        .update({ role: newRole })
+        .eq("id", userId);
+    if (error) throw new Error(`권한 변경 실패: ${error.message}`);
+
+    revalidatePath("/board/designers");
+    revalidatePath("/board");
+}
+
+// ── 디자이너 목록 + role 조회 (admin 전용) ───────────────────
+export async function fetchDesignersWithRoles(): Promise<
+    {
+        id: string;
+        name: string;
+        status: string;
+        is_active: boolean;
+        avatar_url: string | null;
+        user_id: string | null;
+        email: string;
+        role: string | null;
+    }[]
+> {
+    await assertAdmin();
+    const adminClient = createAdminClient();
+
+    const { data: designers } = await adminClient
+        .from("designers")
+        .select("id, name, status, is_active, avatar_url, user_id, email")
+        .order("name", { ascending: true });
+
+    const userIds = (designers ?? [])
+        .filter((d) => d.user_id)
+        .map((d) => d.user_id as string);
+
+    let rolesMap: Record<string, string> = {};
+    if (userIds.length > 0) {
+        const { data: profiles } = await adminClient
+            .from("profiles")
+            .select("id, role")
+            .in("id", userIds);
+        rolesMap = Object.fromEntries(
+            (profiles ?? []).map((p) => [p.id, p.role]),
+        );
+    }
+
+    return (designers ?? []).map((d) => ({
+        ...d,
+        email: d.email ?? "",
+        role: d.user_id ? (rolesMap[d.user_id] ?? "designer") : null,
+    }));
+}
+
 // ── 계정 이메일 변경 (이미 연결된 계정) ──────────────────────
 export async function changeDesignerEmail(userId: string, newEmail: string) {
     await assertAdmin();

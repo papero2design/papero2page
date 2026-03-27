@@ -3,7 +3,6 @@
 
 import { useState, useEffect, useTransition } from "react";
 import { uploadToR2 } from "@/lib/r2/upload";
-import { createClient } from "@/lib/supabase/client";
 import { useToast } from "../Toast";
 import {
     createDesignerAccount,
@@ -15,6 +14,8 @@ import {
     reactivateDesigner,
     changeDesignerEmail,
     hardDeleteDesigner,
+    updateDesignerRole,
+    fetchDesignersWithRoles,
 } from "./actions";
 
 type Designer = {
@@ -25,6 +26,7 @@ type Designer = {
     avatar_url: string | null;
     user_id: string | null;
     email: string;
+    role: string | null;
 };
 
 const STATUSES = ["연차", "반차", "외출", "작업중", "바쁨"] as const;
@@ -355,6 +357,30 @@ function DesignerCard({
                     setEmailModal(false);
                     onRefresh();
                 }
+            }
+        });
+    };
+
+    const handleRoleToggle = () => {
+        if (!designer.user_id) {
+            showToast("연결된 계정이 없습니다.");
+            return;
+        }
+        const newRole = designer.role === "admin" ? "designer" : "admin";
+        const label = newRole === "admin" ? "Admin 권한 부여" : "Admin 권한 해제";
+        if (!confirm(`"${designer.name}"에게 ${label}할까요?`)) return;
+        startTransition(async () => {
+            try {
+                await updateDesignerRole(designer.user_id!, newRole);
+                showToast(
+                    newRole === "admin"
+                        ? "Admin 권한이 부여됐습니다."
+                        : "Admin 권한이 해제됐습니다.",
+                    "success",
+                );
+                onRefresh();
+            } catch (err) {
+                showToast((err as Error).message);
             }
         });
     };
@@ -766,6 +792,21 @@ function DesignerCard({
                                 >
                                     비밀번호 변경
                                 </button>
+                                <button
+                                    onClick={handleRoleToggle}
+                                    disabled={isPending}
+                                    style={{
+                                        ...btn(false),
+                                        width: "100%",
+                                        textAlign: "center",
+                                        color: designer.role === "admin" ? "#b45309" : "#7c3aed",
+                                        borderColor: designer.role === "admin" ? "#fde68a" : "#ddd6fe",
+                                        background: designer.role === "admin" ? "#fffbeb" : "#f5f3ff",
+                                        opacity: isPending ? 0.5 : 1,
+                                    }}
+                                >
+                                    {designer.role === "admin" ? "★ Admin 권한 해제" : "☆ Admin 권한 부여"}
+                                </button>
                             </>
                         )}
                         {designer.is_active ? (
@@ -1145,13 +1186,8 @@ export default function DesignerManageClient() {
     const refresh = async () => {
         setLoading(true);
         try {
-            // 브라우저 → Supabase 직접 (email 컬럼 포함)
-            const supabase = createClient();
-            const { data } = await supabase
-                .from("designers")
-                .select("id, name, status, is_active, avatar_url, user_id, email")
-                .order("name", { ascending: true });
-            setDesigners((data ?? []).map((d) => ({ ...d, email: d.email ?? "" })));
+            const data = await fetchDesignersWithRoles();
+            setDesigners(data);
         } finally {
             setLoading(false);
         }

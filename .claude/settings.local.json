@@ -14,7 +14,8 @@
       "Bash(npx tsc:*)",
       "Bash(grep -v \"^$\")",
       "Bash(find \"g:\\\\workspace\\\\o2design\\\\src\\\\app\\\\\\(classic\\)\\\\board\" -type f -name \"*.tsx\" -o -name \"*.ts\" -o -name \"*.json\")",
-      "Bash(ls \"g:/workspace/o2design/src/app/\\(classic\\)/board/\")"
+      "Bash(ls \"g:/workspace/o2design/src/app/\\(classic\\)/board/\")",
+      "Bash(ls -la /g/workspace/o2design/src/app/\\\\\\(classic\\\\\\)/board/)"
     ]
   }
 }

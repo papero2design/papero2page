@@ -1575,6 +1575,10 @@ export function TaskDetailModal({
                                                                 canCopyBackup
                                                                     ? "pointer"
                                                                     : "default",
+                                                            whiteSpace:
+                                                                isSpecial
+                                                                    ? "pre-line"
+                                                                    : undefined,
                                                         }}
                                                     >
                                                         {link ? (

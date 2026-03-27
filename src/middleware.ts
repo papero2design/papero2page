@@ -20,16 +20,16 @@ export async function middleware(request: NextRequest) {
     );
 
     const {
-        data: { user },
-    } = await supabase.auth.getUser();
+        data: { session },
+    } = await supabase.auth.getSession();
 
     // 미인증 사용자 → /login 리다이렉트
-    if (!user && !request.nextUrl.pathname.startsWith("/login")) {
+    if (!session && !request.nextUrl.pathname.startsWith("/login")) {
         return NextResponse.redirect(new URL("/login", request.url));
     }
 
     // 인증된 사용자가 /login 접근 → /board로
-    if (user && request.nextUrl.pathname.startsWith("/login")) {
+    if (session && request.nextUrl.pathname.startsWith("/login")) {
         return NextResponse.redirect(new URL("/board", request.url));
     }
 

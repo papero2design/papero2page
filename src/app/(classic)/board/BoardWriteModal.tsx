@@ -57,9 +57,12 @@ export default function BoardWriteModal({ open, onClose, onSuccess }: Props) {
     const [submitting, setSubmitting] = useState(false);
     const { showToast, ToastUI } = useToast();
 
-    // 등록자: 계정 이름 자동 기입
+    // 모달 열릴 때 폼 초기화 + 등록자 자동 기입
     useEffect(() => {
         if (!open) return;
+        setForm(INIT);
+        setErrors({});
+        setFiles([]);
         const supabase = createClient();
         supabase.auth.getUser().then(({ data: { user } }) => {
             if (!user) return;

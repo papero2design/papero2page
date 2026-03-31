@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { TaskWithDesigner } from "@/types/database";
 import BoardTable from "../BoardTable";
 import PaginationClient from "../PaginationClient";
+import WriteButton from "../WriteButton";
 
 const TASK_SELECT =
     "id, task_number, order_source, customer_name, order_method, order_method_note, " +
@@ -28,7 +29,9 @@ export default function SearchPage() {
 
     const [isAdmin, setIsAdmin] = useState(false);
     const [isDesigner, setIsDesigner] = useState(false);
-    const [designers, setDesigners] = useState<{ id: string; name: string }[]>([]);
+    const [designers, setDesigners] = useState<{ id: string; name: string }[]>(
+        [],
+    );
 
     const term = (searchParams.get("q") ?? "").trim();
     const page = Math.max(1, Number(searchParams.get("page") ?? 1));
@@ -49,8 +52,16 @@ export default function SearchPage() {
             if (!user) return;
 
             const [profileRes, designersRes] = await Promise.all([
-                supabase.from("profiles").select("role").eq("id", user.id).single(),
-                supabase.from("designers").select("id, name").eq("is_active", true).order("name"),
+                supabase
+                    .from("profiles")
+                    .select("role")
+                    .eq("id", user.id)
+                    .single(),
+                supabase
+                    .from("designers")
+                    .select("id, name")
+                    .eq("is_active", true)
+                    .order("name"),
             ]);
 
             const role = profileRes.data?.role;
@@ -181,32 +192,46 @@ export default function SearchPage() {
                     marginBottom: 4,
                 }}
             >
-                <Link
-                    href="/board"
-                    style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        color: "#6b7280",
-                        textDecoration: "none",
-                        fontSize: 13,
-                        padding: "4px 10px",
-                        border: "1px solid #e5e7eb",
-                        borderRadius: 6,
-                        background: "#fff",
-                    }}
-                >
-                    ← 돌아가기
-                </Link>
-                <p style={{ margin: 0, color: "#9ca3af", fontSize: 14 }}>
-                    <strong style={{ color: "#111827" }}>
-                        &quot;{term}&quot;
-                    </strong>{" "}
-                    검색결과{" "}
-                    <strong style={{ color: "#111827" }}>{total}</strong>건
-                    <span style={{ color: "#d1d5db", marginLeft: 6, fontSize: 12 }}>
-                        고객이름 · 인쇄항목 · 특이사항
-                    </span>
-                </p>
+                <div className="w-full h-auto flex content-center flex-wrap ">
+                    <Link
+                        href="/board"
+                        style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            color: "#6b7280",
+                            textDecoration: "none",
+                            fontSize: 13,
+                            padding: "4px 10px",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: 6,
+                            background: "#fff",
+                        }}
+                    >
+                        ← 돌아가기
+                    </Link>
+                    <p
+                        style={{ color: "#9ca3af", fontSize: 14 }}
+                        className="flex ml-2 gap-2 content-center self-center"
+                    >
+                        <strong style={{ color: "#111827" }}>
+                            &quot;{term}&quot;
+                        </strong>{" "}
+                        검색결과{" "}
+                        <strong style={{ color: "#111827" }}>{total}</strong>건
+                        <span
+                            style={{
+                                color: "#d1d5db",
+                                marginLeft: 6,
+                                fontSize: 12,
+                            }}
+                        >
+                            고객이름 · 인쇄항목 · 특이사항
+                        </span>
+                    </p>
+                </div>
+                <div className="w-max">
+                    <WriteButton />
+                </div>
             </div>
 
             {/* 결과 없음 */}

@@ -1225,13 +1225,24 @@ export function TaskDetailModal({
                                 </span>
                             )}
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                            }}
+                        >
                             <button
                                 onClick={() => {
-                                    navigator.clipboard.writeText(window.location.href).then(() => {
-                                        setLinkCopied(true);
-                                        setTimeout(() => setLinkCopied(false), 1500);
-                                    });
+                                    navigator.clipboard
+                                        .writeText(window.location.href)
+                                        .then(() => {
+                                            setLinkCopied(true);
+                                            setTimeout(
+                                                () => setLinkCopied(false),
+                                                1500,
+                                            );
+                                        });
                                 }}
                                 title="링크 복사"
                                 style={{
@@ -1242,7 +1253,9 @@ export function TaskDetailModal({
                                     height: 30,
                                     borderRadius: "50%",
                                     border: `1px solid ${linkCopied ? "#bbf7d0" : "#e5e7eb"}`,
-                                    background: linkCopied ? "#f0fdf4" : "#f9fafb",
+                                    background: linkCopied
+                                        ? "#f0fdf4"
+                                        : "#f9fafb",
                                     cursor: "pointer",
                                     color: linkCopied ? "#15803d" : "#6b7280",
                                     transition: "all 0.15s",
@@ -1250,11 +1263,29 @@ export function TaskDetailModal({
                                 }}
                             >
                                 {linkCopied ? (
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <svg
+                                        width="14"
+                                        height="14"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2.5"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    >
                                         <polyline points="20 6 9 17 4 12" />
                                     </svg>
                                 ) : (
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <svg
+                                        width="14"
+                                        height="14"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    >
                                         <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                                         <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                                     </svg>
@@ -2267,7 +2298,7 @@ function BoardTable({
             .then(({ data }) => {
                 if (data) setModalTask(data as unknown as TaskWithDesigner);
             });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const openModal = (task: TaskWithDesigner) => {
@@ -2649,9 +2680,7 @@ function BoardTable({
                                                         : "#111827",
                                                     cursor: "pointer",
                                                 }}
-                                                onClick={() =>
-                                                    openModal(task)
-                                                }
+                                                onClick={() => openModal(task)}
                                             >
                                                 {task.customer_name}
                                             </span>
@@ -2703,9 +2732,7 @@ function BoardTable({
                                                     color: "#9ca3af",
                                                     cursor: "pointer",
                                                 }}
-                                                onClick={() =>
-                                                    openModal(task)
-                                                }
+                                                onClick={() => openModal(task)}
                                             >
                                                 {task.print_items}
                                             </span>
@@ -2783,9 +2810,7 @@ function BoardTable({
                                             )}
                                             <button
                                                 type="button"
-                                                onClick={() =>
-                                                    openModal(task)
-                                                }
+                                                onClick={() => openModal(task)}
                                                 title="자세히 보기"
                                                 style={{
                                                     marginLeft: "auto",

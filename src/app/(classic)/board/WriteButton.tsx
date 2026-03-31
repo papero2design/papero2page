@@ -4,16 +4,12 @@ import { useState } from "react";
 import BoardWriteModal from "./BoardWriteModal";
 import { useRouter } from "next/navigation";
 
-export default function WriteButton({
-    onRefresh,
-}: {
-    onRefresh?: () => void;
-}) {
+export default function WriteButton({ onRefresh }: { onRefresh?: () => void }) {
     const [open, setOpen] = useState(false);
     const router = useRouter();
 
     return (
-        <>
+        <div className="w-max">
             <button onClick={() => setOpen(true)} className="bo-btn primary">
                 등록하기
             </button>
@@ -26,6 +22,6 @@ export default function WriteButton({
                     else router.refresh();
                 }}
             />
-        </>
+        </div>
     );
 }

@@ -43,6 +43,9 @@ export interface Task {
     is_priority: boolean;
     is_quick: boolean;
 
+    // 묶음 주문 (같은 고객의 여러 건)
+    group_id: string | null; // UUID — 같은 그룹끼리 공유
+
     // 시간
     created_at: string;
     completed_at: string | null;
@@ -83,6 +86,7 @@ export type TaskWithDesigner = Pick<
     | "consult_link"
     | "special_details"
     | "registered_by"
+    | "group_id"
     | "status"
     | "is_priority"
     | "is_quick"

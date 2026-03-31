@@ -6,6 +6,7 @@ import {
     useEffect,
     useCallback,
     useRef,
+    useMemo,
     memo,
     Fragment,
 } from "react";
@@ -36,7 +37,7 @@ import { useToast } from "./Toast";
 const TASK_SELECT =
     "id, task_number, order_source, customer_name, order_method, order_method_note, " +
     "print_items, post_processing, file_paths, " +
-    "consult_path, consult_link, special_details, registered_by, " +
+    "consult_path, consult_link, special_details, registered_by, group_id, " +
     "status, is_priority, is_quick, created_at, deleted_at, " +
     "designer:designers(id, name)";
 
@@ -705,20 +706,60 @@ function TaskFilesEdit({
 // 상세 모달
 // ─────────────────────────────────────────────────────────────
 
+// 오버레이 조건부 래퍼 (embedded=true 시 오버레이 생략)
+function MaybeOverlay({
+    wrap,
+    onClose,
+    blockRef,
+    children,
+}: {
+    wrap: boolean;
+    onClose: () => void;
+    blockRef: React.MutableRefObject<boolean>;
+    children: React.ReactNode;
+}) {
+    if (!wrap) return <>{children}</>;
+    return (
+        <div
+            style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.45)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 1000,
+                padding: 16,
+            }}
+            onMouseDown={(e) => {
+                if (e.target === e.currentTarget && !blockRef.current)
+                    onClose();
+            }}
+        >
+            {children}
+        </div>
+    );
+}
+
 export function TaskDetailModal({
     task,
     onClose,
     onDeleted,
+    onComplete,
     designers = [],
     canEditDesigner = false,
     onMutate,
+    embedded = false,
 }: {
     task: TaskWithDesigner;
     onClose: () => void;
     onDeleted: () => void;
+    /** 완료 처리 시 호출. 미제공이면 onClose()로 대체. */
+    onComplete?: () => void;
     designers?: { id: string; name: string }[];
     canEditDesigner?: boolean;
     onMutate?: () => void;
+    embedded?: boolean;
 }) {
     const [currentStatus, setCurrentStatus] = useState<Status>(
         (STATUSES as readonly string[]).includes(task.status)
@@ -824,7 +865,7 @@ export function TaskDetailModal({
                 );
                 setCurrentStatus(newStatus);
                 onMutate?.();
-                if (newStatus === "완료") onClose();
+                if (newStatus === "완료") (onComplete ?? onClose)();
             } catch (err) {
                 showToast("상태 변경 실패: " + (err as Error).message);
             }
@@ -885,7 +926,7 @@ export function TaskDetailModal({
                 );
                 setCurrentStatus("완료");
                 onMutate?.();
-                onClose();
+                (onComplete ?? onClose)();
             } catch (err) {
                 showToast("상태 변경 실패: " + (err as Error).message);
             }
@@ -1128,21 +1169,10 @@ export function TaskDetailModal({
                 />
             )}
 
-            <div
-                style={{
-                    position: "fixed",
-                    inset: 0,
-                    background: "rgba(0,0,0,0.45)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    zIndex: 1000,
-                    padding: 16,
-                }}
-                onMouseDown={(e) => {
-                    if (e.target === e.currentTarget && !blockCloseRef.current)
-                        onClose();
-                }}
+            <MaybeOverlay
+                wrap={!embedded}
+                onClose={onClose}
+                blockRef={blockCloseRef}
             >
                 <div
                     onMouseDown={(e) => e.stopPropagation()}
@@ -1155,6 +1185,8 @@ export function TaskDetailModal({
                         overflowY: "auto",
                         boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
                         fontFamily: "inherit",
+                        // embedded 모드: flex 컨테이너 안에서 크기 고정
+                        ...(embedded && { flex: "0 0 auto" }),
                     }}
                 >
                     {/* 헤더 */}
@@ -2250,8 +2282,91 @@ export function TaskDetailModal({
                         </div>
                     </div>
                 </div>
-            </div>
+            </MaybeOverlay>
         </>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────
+// 묶음 주문 병렬 모달
+// ─────────────────────────────────────────────────────────────
+
+function GroupTaskModal({
+    tasks: initialTasks,
+    onClose,
+    designers,
+    canEditDesigner,
+    onMutate,
+}: {
+    tasks: TaskWithDesigner[];
+    onClose: () => void;
+    designers?: { id: string; name: string }[];
+    canEditDesigner?: boolean;
+    onMutate?: () => void;
+}) {
+    const [visibleIds, setVisibleIds] = useState<Set<string>>(
+        () => new Set(initialTasks.map((t) => t.id)),
+    );
+
+    const removeTask = (id: string) => {
+        setVisibleIds((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+        });
+    };
+
+    // 모든 패널이 닫히면 그룹 모달 전체 종료
+    useEffect(() => {
+        if (visibleIds.size === 0) onClose();
+    }, [visibleIds, onClose]);
+
+    const visibleTasks = initialTasks.filter((t) => visibleIds.has(t.id));
+
+    return (
+        <div
+            style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.55)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 12,
+                zIndex: 1000,
+                padding: "16px",
+                overflowX: "auto",
+                overflowY: "hidden",
+            }}
+            onMouseDown={(e) => {
+                if (e.target === e.currentTarget) onClose();
+            }}
+        >
+            {visibleTasks.map((task) => (
+                <div
+                    key={task.id}
+                    style={{
+                        flex: "0 0 auto",
+                        width: 500,
+                        maxHeight: "calc(100vh - 32px)",
+                        overflowY: "auto",
+                        display: "flex",
+                        flexDirection: "column",
+                    }}
+                >
+                    <TaskDetailModal
+                        task={task}
+                        onClose={() => removeTask(task.id)}
+                        onDeleted={() => removeTask(task.id)}
+                        onComplete={() => removeTask(task.id)}
+                        designers={designers}
+                        canEditDesigner={canEditDesigner}
+                        onMutate={onMutate}
+                        embedded
+                    />
+                </div>
+            ))}
+        </div>
     );
 }
 
@@ -2271,10 +2386,68 @@ function BoardTable({
 }: Props) {
     const [checked, setChecked] = useState<Set<string>>(new Set());
     const [modalTask, setModalTask] = useState<TaskWithDesigner | null>(null);
+    const [groupModalTasks, setGroupModalTasks] = useState<
+        TaskWithDesigner[] | null
+    >(null);
     const [isPending, startTransition] = useTransition();
     const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
     const [bulkCompleteConfirm, setBulkCompleteConfirm] = useState(false);
     const { showToast, ToastUI } = useToast();
+
+    // 묶음 주문 그룹핑: 같은 group_id 끼리 인접하게 재정렬
+    const processedTasks = useMemo(() => {
+        if (!tasks.some((t) => t.group_id)) return tasks;
+        const grouped = new Map<string, TaskWithDesigner[]>();
+        for (const task of tasks) {
+            if (task.group_id) {
+                if (!grouped.has(task.group_id)) grouped.set(task.group_id, []);
+                grouped.get(task.group_id)!.push(task);
+            }
+        }
+        const groupInserted = new Set<string>();
+        const result: TaskWithDesigner[] = [];
+        for (const task of tasks) {
+            if (!task.group_id) {
+                result.push(task);
+            } else if (!groupInserted.has(task.group_id)) {
+                groupInserted.add(task.group_id);
+                result.push(...grouped.get(task.group_id)!);
+            }
+        }
+        return result;
+    }, [tasks]);
+
+    // group_id별 총 건수 맵
+    const groupSizeMap = useMemo(() => {
+        const m = new Map<string, number>();
+        for (const task of processedTasks) {
+            if (task.group_id)
+                m.set(task.group_id, (m.get(task.group_id) ?? 0) + 1);
+        }
+        return m;
+    }, [processedTasks]);
+
+    // group_id별 task ID 목록 맵 (묶음 체크박스용)
+    const groupTaskIdsMap = useMemo(() => {
+        const m = new Map<string, string[]>();
+        for (const task of processedTasks) {
+            if (task.group_id) {
+                if (!m.has(task.group_id)) m.set(task.group_id, []);
+                m.get(task.group_id)!.push(task.id);
+            }
+        }
+        return m;
+    }, [processedTasks]);
+
+    const toggleGroupCheck = (ids: string[]) => {
+        setChecked((prev) => {
+            const n = new Set(prev);
+            const allChecked = ids.every((id) => n.has(id));
+            if (allChecked) ids.forEach((id) => n.delete(id));
+            else ids.forEach((id) => n.add(id));
+            return n;
+        });
+    };
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -2315,6 +2488,12 @@ function BoardTable({
         router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     };
 
+    // 묶음 주문 전체를 병렬 모달로 열기
+    const openGroupModal = (groupId: string) => {
+        const groupTasks = processedTasks.filter((t) => t.group_id === groupId);
+        if (groupTasks.length > 0) setGroupModalTasks(groupTasks);
+    };
+
     const toggleCheck = (id: string) =>
         setChecked((prev) => {
             const n = new Set(prev);
@@ -2324,9 +2503,9 @@ function BoardTable({
         });
     const toggleAll = () =>
         setChecked((prev) =>
-            prev.size === tasks.length
+            prev.size === processedTasks.length
                 ? new Set()
-                : new Set(tasks.map((t) => t.id)),
+                : new Set(processedTasks.map((t) => t.id)),
         );
 
     const handleBulkDelete = () => {
@@ -2501,8 +2680,8 @@ function BoardTable({
                                 type="checkbox"
                                 title="전체선택"
                                 checked={
-                                    checked.size === tasks.length &&
-                                    tasks.length > 0
+                                    checked.size === processedTasks.length &&
+                                    processedTasks.length > 0
                                 }
                                 onChange={toggleAll}
                             />
@@ -2521,6 +2700,7 @@ function BoardTable({
                         </th>
                         <th
                             scope="col"
+                            colSpan={2}
                             style={{
                                 ...styles.th,
                                 textAlign: "left",
@@ -2557,21 +2737,60 @@ function BoardTable({
                             </td>
                         </tr>
                     )}
-                    {tasks.map((task, i) => {
+                    {processedTasks.map((task, i) => {
                         const hasAlert = !!task.special_details;
                         const isChecked = checked.has(task.id);
                         const currDate = fmtDate(task.created_at);
                         const prevDate =
-                            i > 0 ? fmtDate(tasks[i - 1].created_at) : null;
+                            i > 0
+                                ? fmtDate(processedTasks[i - 1].created_at)
+                                : null;
+                        const prevGroupId =
+                            i > 0 ? processedTasks[i - 1].group_id : null;
                         const showDateDivider =
-                            prevDate !== null && prevDate !== currDate;
+                            prevDate !== null &&
+                            prevDate !== currDate &&
+                            !(task.group_id && task.group_id === prevGroupId);
+
+                        const isGrouped = !!task.group_id;
+                        const isGroupFirst =
+                            isGrouped && task.group_id !== prevGroupId;
+                        const isSubsequentInGroup = isGrouped && !isGroupFirst;
+                        const groupSize = task.group_id
+                            ? (groupSizeMap.get(task.group_id) ?? 1)
+                            : 1;
+                        const gTaskIds =
+                            isGroupFirst && task.group_id
+                                ? (groupTaskIdsMap.get(task.group_id) ?? [
+                                      task.id,
+                                  ])
+                                : [task.id];
+                        const isGroupAllChecked = isGroupFirst
+                            ? gTaskIds.every((id) => checked.has(id))
+                            : isChecked;
+
+                        // 행 배경 (비묶음만 적용)
+                        const rowBg = !isGrouped
+                            ? isChecked
+                                ? "#f0fdf4"
+                                : highlightPriorityRows && task.is_priority
+                                  ? "#fff7f7"
+                                  : "#fff"
+                            : "transparent";
+
+                        // 묶음 셀 배경
+                        const groupCellBg = isGroupAllChecked
+                            ? "#dcfce7"
+                            : "#f0f7ff";
+                        // 묶음 주문내용 셀 배경
+                        const groupDetailBg = isChecked ? "#e0f2fe" : "#f5f9ff";
 
                         return (
                             <Fragment key={task.id}>
                                 {showDateDivider && (
                                     <tr>
                                         <td
-                                            colSpan={4}
+                                            colSpan={5}
                                             style={{
                                                 padding: 0,
                                                 height: 0,
@@ -2580,88 +2799,207 @@ function BoardTable({
                                         />
                                     </tr>
                                 )}
+                                {isGroupFirst && i > 0 && !showDateDivider && (
+                                    <tr>
+                                        <td
+                                            colSpan={5}
+                                            style={{
+                                                padding: 0,
+                                                height: 0,
+                                                borderTop: "2px solid #bfdbfe",
+                                            }}
+                                        />
+                                    </tr>
+                                )}
                                 <tr
                                     style={{
                                         ...styles.row,
+                                        // 비묶음 행: borderLeft + background + hover 모두 적용
+                                        // 묶음 행: <tr>에서는 borderLeft만 (배경은 각 td에)
                                         borderLeft: task.is_priority
                                             ? "3px solid #ef4444"
-                                            : "3px solid transparent",
-                                        background: isChecked
-                                            ? "#f0fdf4"
-                                            : highlightPriorityRows &&
-                                                task.is_priority
-                                              ? "#fff7f7"
-                                              : "#fff",
+                                            : isGrouped
+                                              ? "3px solid #3b82f6"
+                                              : "3px solid transparent",
+                                        background: rowBg,
                                     }}
-                                    onMouseEnter={(e) => {
-                                        (
-                                            e.currentTarget as HTMLElement
-                                        ).style.background = isChecked
-                                            ? "#dcfce7"
-                                            : "#f9fafb";
-                                    }}
-                                    onMouseLeave={(e) => {
-                                        (
-                                            e.currentTarget as HTMLElement
-                                        ).style.background = isChecked
-                                            ? "#f0fdf4"
-                                            : highlightPriorityRows &&
-                                                task.is_priority
-                                              ? "#fff7f7"
-                                              : "#fff";
-                                    }}
+                                    onMouseEnter={
+                                        !isGrouped
+                                            ? (e) => {
+                                                  (
+                                                      e.currentTarget as HTMLElement
+                                                  ).style.background = isChecked
+                                                      ? "#dcfce7"
+                                                      : "#f9fafb";
+                                              }
+                                            : undefined
+                                    }
+                                    onMouseLeave={
+                                        !isGrouped
+                                            ? (e) => {
+                                                  (
+                                                      e.currentTarget as HTMLElement
+                                                  ).style.background = rowBg;
+                                              }
+                                            : undefined
+                                    }
                                 >
-                                    {/* 체크박스 */}
-                                    <td
-                                        onClick={() => toggleCheck(task.id)}
-                                        style={{
-                                            ...styles.td,
-                                            width: 36,
-                                            textAlign: "center",
-                                            cursor: "pointer",
-                                            background: isChecked
-                                                ? "#dcfce7"
-                                                : "#f9fafb",
-                                        }}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={isChecked}
-                                            onChange={() =>
-                                                toggleCheck(task.id)
+                                    {/* ── 체크박스 (비묶음 전체, 묶음 첫 행만 rowspan) ── */}
+                                    {!isSubsequentInGroup && (
+                                        <td
+                                            rowSpan={
+                                                isGroupFirst
+                                                    ? groupSize
+                                                    : undefined
                                             }
-                                            onClick={(e) => e.stopPropagation()}
+                                            onClick={() =>
+                                                isGroupFirst
+                                                    ? toggleGroupCheck(gTaskIds)
+                                                    : toggleCheck(task.id)
+                                            }
                                             style={{
+                                                ...styles.td,
+                                                width: 36,
+                                                textAlign: "center",
                                                 cursor: "pointer",
-                                                width: 14,
-                                                height: 14,
+                                                background: isGrouped
+                                                    ? groupCellBg
+                                                    : isChecked
+                                                      ? "#dcfce7"
+                                                      : "#f9fafb",
+                                                verticalAlign: "middle",
                                             }}
-                                        />
-                                    </td>
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={
+                                                    isGroupFirst
+                                                        ? isGroupAllChecked
+                                                        : isChecked
+                                                }
+                                                onChange={() =>
+                                                    isGroupFirst
+                                                        ? toggleGroupCheck(
+                                                              gTaskIds,
+                                                          )
+                                                        : toggleCheck(task.id)
+                                                }
+                                                onClick={(e) =>
+                                                    e.stopPropagation()
+                                                }
+                                                style={{
+                                                    cursor: "pointer",
+                                                    width: 14,
+                                                    height: 14,
+                                                }}
+                                            />
+                                        </td>
+                                    )}
 
-                                    {/* 순번 */}
+                                    {/* ── 순번 (비묶음 전체, 묶음 첫 행만 rowspan) ── */}
+                                    {!isSubsequentInGroup && (
+                                        <td
+                                            rowSpan={
+                                                isGroupFirst
+                                                    ? groupSize
+                                                    : undefined
+                                            }
+                                            onClick={() =>
+                                                isGroupFirst
+                                                    ? toggleGroupCheck(gTaskIds)
+                                                    : toggleCheck(task.id)
+                                            }
+                                            style={{
+                                                ...styles.td,
+                                                width: 52,
+                                                textAlign: "center",
+                                                cursor: "pointer",
+                                                color: "#9ca3af",
+                                                fontSize: 12,
+                                                background: isGrouped
+                                                    ? groupCellBg
+                                                    : isChecked
+                                                      ? "#dcfce7"
+                                                      : "#f9fafb",
+                                                verticalAlign: "middle",
+                                            }}
+                                        >
+                                            {total - from - i}
+                                        </td>
+                                    )}
+
+                                    {/* ── 고객명 셀 (묶음 첫 행만, rowspan=N) ── */}
+                                    {isGroupFirst && (
+                                        <td
+                                            rowSpan={groupSize}
+                                            style={{
+                                                ...styles.td,
+                                                paddingLeft: 15,
+                                                paddingRight: 12,
+                                                verticalAlign: "middle",
+                                                borderRight:
+                                                    "1px solid #bfdbfe",
+                                                background: groupCellBg,
+                                            }}
+                                        >
+                                            <div
+                                                style={{
+                                                    display: "flex",
+                                                    flexDirection: "column",
+                                                    gap: 5,
+                                                    alignItems: "flex-start",
+                                                }}
+                                            >
+                                                <span
+                                                    style={{
+                                                        fontWeight: 700,
+                                                        color: task.is_priority
+                                                            ? "#dc2626"
+                                                            : "#111827",
+                                                        cursor: "pointer",
+                                                        whiteSpace: "nowrap",
+                                                    }}
+                                                    onClick={() =>
+                                                        openGroupModal(
+                                                            task.group_id!,
+                                                        )
+                                                    }
+                                                >
+                                                    {task.customer_name}
+                                                </span>
+                                                <span
+                                                    style={{
+                                                        ...baseBadge(
+                                                            "#dbeafe",
+                                                            "#1d4ed8",
+                                                            "#93c5fd",
+                                                        ),
+                                                        cursor: "pointer",
+                                                    }}
+                                                    onClick={() =>
+                                                        openGroupModal(
+                                                            task.group_id!,
+                                                        )
+                                                    }
+                                                >
+                                                    묶음 주문
+                                                </span>
+                                            </div>
+                                        </td>
+                                    )}
+
+                                    {/* ── 내용 셀 ──
+                                        비묶음: colSpan=2, 고객명+주문내용 모두
+                                        묶음:   주문내용만 (고객명은 별도 rowspan 셀)
+                                    ── */}
                                     <td
-                                        onClick={() => toggleCheck(task.id)}
+                                        colSpan={!isGrouped ? 2 : undefined}
                                         style={{
                                             ...styles.td,
-                                            width: 52,
-                                            textAlign: "center",
-                                            cursor: "pointer",
-                                            color: "#9ca3af",
-                                            fontSize: 12,
-                                            background: isChecked
-                                                ? "#dcfce7"
-                                                : "#f9fafb",
-                                        }}
-                                    >
-                                        {total - from - i}
-                                    </td>
-
-                                    {/* 내용 */}
-                                    <td
-                                        style={{
-                                            ...styles.td,
-                                            paddingLeft: 15,
+                                            paddingLeft: isGrouped ? 12 : 15,
+                                            background: isGrouped
+                                                ? groupDetailBg
+                                                : undefined,
                                         }}
                                     >
                                         <div
@@ -2672,18 +3010,23 @@ function BoardTable({
                                                 flexWrap: "wrap",
                                             }}
                                         >
-                                            <span
-                                                style={{
-                                                    fontWeight: 700,
-                                                    color: task.is_priority
-                                                        ? "#dc2626"
-                                                        : "#111827",
-                                                    cursor: "pointer",
-                                                }}
-                                                onClick={() => openModal(task)}
-                                            >
-                                                {task.customer_name}
-                                            </span>
+                                            {/* 비묶음만: 고객명 */}
+                                            {!isGrouped && (
+                                                <span
+                                                    style={{
+                                                        fontWeight: 700,
+                                                        color: task.is_priority
+                                                            ? "#dc2626"
+                                                            : "#111827",
+                                                        cursor: "pointer",
+                                                    }}
+                                                    onClick={() =>
+                                                        openModal(task)
+                                                    }
+                                                >
+                                                    {task.customer_name}
+                                                </span>
+                                            )}
                                             {hasAlert && (
                                                 <span
                                                     style={baseBadge(
@@ -2829,24 +3172,35 @@ function BoardTable({
                                         </div>
                                     </td>
 
-                                    {/* 날짜 / 담당 */}
-                                    <td
-                                        onClick={() => openModal(task)}
-                                        style={{
-                                            ...styles.td,
-                                            width: 90,
-                                            textAlign: "center",
-                                            color: "#9ca3af",
-                                            whiteSpace: "nowrap",
-                                            cursor: "pointer",
-                                        }}
-                                    >
-                                        {fmtDate(task.created_at)}
-                                        <br />
-                                        <span style={{ color: "#c4c4c4" }}>
-                                            {fmtTime(task.created_at)}
-                                        </span>
-                                    </td>
+                                    {/* ── 날짜/담당 (비묶음 전체, 묶음 첫 행만 rowspan) ── */}
+                                    {!isSubsequentInGroup && (
+                                        <td
+                                            rowSpan={
+                                                isGroupFirst
+                                                    ? groupSize
+                                                    : undefined
+                                            }
+                                            onClick={() => openModal(task)}
+                                            style={{
+                                                ...styles.td,
+                                                width: 90,
+                                                textAlign: "center",
+                                                color: "#9ca3af",
+                                                whiteSpace: "nowrap",
+                                                cursor: "pointer",
+                                                background: isGrouped
+                                                    ? groupCellBg
+                                                    : undefined,
+                                                verticalAlign: "middle",
+                                            }}
+                                        >
+                                            {fmtDate(task.created_at)}
+                                            <br />
+                                            <span style={{ color: "#c4c4c4" }}>
+                                                {fmtTime(task.created_at)}
+                                            </span>
+                                        </td>
+                                    )}
                                 </tr>
                             </Fragment>
                         );
@@ -2859,6 +3213,15 @@ function BoardTable({
                     task={modalTask}
                     onClose={closeModal}
                     onDeleted={closeModal}
+                    designers={designers}
+                    canEditDesigner={canEditDesigner}
+                    onMutate={onMutate}
+                />
+            )}
+            {groupModalTasks && (
+                <GroupTaskModal
+                    tasks={groupModalTasks}
+                    onClose={() => setGroupModalTasks(null)}
                     designers={designers}
                     canEditDesigner={canEditDesigner}
                     onMutate={onMutate}

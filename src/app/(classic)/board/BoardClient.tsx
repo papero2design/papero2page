@@ -15,7 +15,7 @@ import DesignerBoardClient from "./designers/[id]/DesignerBoardClient";
 const TASK_SELECT =
     "id, task_number, order_source, customer_name, order_method, order_method_note, " +
     "print_items, post_processing, file_paths, " +
-    "consult_path, consult_link, special_details, registered_by, " +
+    "consult_path, consult_link, special_details, registered_by, group_id, " +
     "status, is_priority, is_quick, created_at, deleted_at, " +
     "designer:designers(id, name)";
 

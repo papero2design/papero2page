@@ -3045,18 +3045,42 @@ function BoardTable({
                                                             "인쇄만 의뢰" ||
                                                         task.order_method ===
                                                             "재주문(수정없는)";
+                                                    const isDesign =
+                                                        task.order_method ===
+                                                            "디자인 복원" ||
+                                                        task.order_method ===
+                                                            "신규 디자인" ||
+                                                        task.order_method ===
+                                                            "디자인 수정";
+
                                                     return (
                                                         <span
                                                             style={{
                                                                 fontSize: 12,
+                                                                // isPrintOnly면 파란색, isDesign이면 빨간색, 둘 다 아니면 짙은 회색
                                                                 color: isPrintOnly
                                                                     ? "#1d4ed8"
-                                                                    : "#374151",
+                                                                    : isDesign
+                                                                      ? "#dc2626"
+                                                                      : "#374151",
+
+                                                                // 텍스트 색상에 어울리는 배경색 지정
                                                                 background:
                                                                     isPrintOnly
                                                                         ? "#eff6ff"
-                                                                        : "#f3f4f6",
-                                                                border: `1px solid ${isPrintOnly ? "#bfdbfe" : "#e5e7eb"}`,
+                                                                        : isDesign
+                                                                          ? "#fef2f2"
+                                                                          : "#f3f4f6",
+
+                                                                // isPrintOnly면 연한 파란색, isDesign이면 연한 빨간색, 둘 다 아니면 연한 회색 테두리
+                                                                border: `1px solid ${
+                                                                    isPrintOnly
+                                                                        ? "#bfdbfe"
+                                                                        : isDesign
+                                                                          ? "#fca5a5"
+                                                                          : "#e5e7eb"
+                                                                }`,
+
                                                                 padding:
                                                                     "2px 7px",
                                                                 borderRadius: 4,
@@ -3093,9 +3117,12 @@ function BoardTable({
                                                     </span>
                                                 )}
                                             {task.print_items &&
-                                                task.print_items.includes(
+                                                (task.print_items.includes(
                                                     "약도",
-                                                ) && (
+                                                ) ||
+                                                    task.print_items.includes(
+                                                        "로고",
+                                                    )) && (
                                                     <span
                                                         style={baseBadge(
                                                             "#fff7ed",
@@ -3103,7 +3130,18 @@ function BoardTable({
                                                             "#fed7aa",
                                                         )}
                                                     >
-                                                        약도
+                                                        {task.print_items.includes(
+                                                            "약도",
+                                                        ) &&
+                                                        task.print_items.includes(
+                                                            "로고",
+                                                        )
+                                                            ? "약도 / 로고"
+                                                            : task.print_items.includes(
+                                                                    "약도",
+                                                                )
+                                                              ? "약도"
+                                                              : "로고"}
                                                     </span>
                                                 )}
                                             {task.status === "완료" && (

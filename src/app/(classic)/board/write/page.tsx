@@ -89,8 +89,7 @@ export default function BoardWritePage() {
         });
     };
 
-    const addItem = () =>
-        setItems((prev) => [...prev, { ...ITEM_INIT }]);
+    const addItem = () => setItems((prev) => [...prev, { ...ITEM_INIT }]);
 
     const removeItem = (idx: number) =>
         setItems((prev) => prev.filter((_, i) => i !== idx));
@@ -124,8 +123,7 @@ export default function BoardWritePage() {
         }
         setLoading(true);
         try {
-            const groupId =
-                items.length > 1 ? crypto.randomUUID() : null;
+            const groupId = items.length > 1 ? crypto.randomUUID() : null;
 
             for (const item of items) {
                 // 파일 업로드
@@ -516,9 +514,7 @@ export default function BoardWritePage() {
                             <Row label="첨부파일">
                                 <FileUploadField
                                     files={item.files}
-                                    onChange={(f) =>
-                                        setItem(idx, "files", f)
-                                    }
+                                    onChange={(f) => setItem(idx, "files", f)}
                                 />
                             </Row>
 

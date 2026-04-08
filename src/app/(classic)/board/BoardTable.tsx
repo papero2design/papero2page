@@ -2798,9 +2798,9 @@ function BoardTable({
                         // 묶음 셀 배경
                         const groupCellBg = isGroupAllChecked
                             ? "#dcfce7"
-                            : "#f0f7ff";
+                            : "#fff";
                         // 묶음 주문내용 셀 배경
-                        const groupDetailBg = isChecked ? "#e0f2fe" : "#f5f9ff";
+                        const groupDetailBg = isChecked ? "#f0fdf4" : "transparent";
 
                         return (
                             <Fragment key={task.id}>
@@ -2823,7 +2823,7 @@ function BoardTable({
                                             style={{
                                                 padding: 0,
                                                 height: 0,
-                                                borderTop: "2px solid #bfdbfe",
+                                                borderTop: "2px solid #e5e7eb",
                                             }}
                                         />
                                     </tr>
@@ -2955,7 +2955,7 @@ function BoardTable({
                                                 paddingRight: 12,
                                                 verticalAlign: "middle",
                                                 borderRight:
-                                                    "1px solid #bfdbfe",
+                                                    "1px solid #e5e7eb",
                                                 background: groupCellBg,
                                             }}
                                         >

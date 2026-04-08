@@ -2984,23 +2984,6 @@ function BoardTable({
                                                 >
                                                     {task.customer_name}
                                                 </span>
-                                                <span
-                                                    style={{
-                                                        ...baseBadge(
-                                                            "#dbeafe",
-                                                            "#1d4ed8",
-                                                            "#93c5fd",
-                                                        ),
-                                                        cursor: "pointer",
-                                                    }}
-                                                    onClick={() =>
-                                                        openGroupModal(
-                                                            task.group_id!,
-                                                        )
-                                                    }
-                                                >
-                                                    묶음 주문
-                                                </span>
                                             </div>
                                         </td>
                                     )}

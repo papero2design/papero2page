@@ -63,6 +63,23 @@ interface Props {
     highlightPriorityRows?: boolean;
 }
 
+export function getTaskLocation(task: TaskWithDesigner): {
+    label: string;
+    bg: string;
+    color: string;
+    border: string;
+} {
+    if (task.deleted_at)
+        return { label: "휴지통", bg: "#fef2f2", color: "#ef4444", border: "#fecaca" };
+    if (task.status === "완료")
+        return { label: "작업완료", bg: "#f0fdf4", color: "#15803d", border: "#bbf7d0" };
+    if (task.designer?.name)
+        return { label: task.designer.name, bg: "#eff6ff", color: "#1d4ed8", border: "#bfdbfe" };
+    if (task.is_priority)
+        return { label: "우선작업", bg: "#fff7ed", color: "#c2410c", border: "#fed7aa" };
+    return { label: "작업중 (미배정)", bg: "#f9fafb", color: "#6b7280", border: "#e5e7eb" };
+}
+
 const ORDER_SOURCES = ["홈페이지", "스토어팜"];
 const ORDER_METHODS = [
     "샘플디자인 의뢰",

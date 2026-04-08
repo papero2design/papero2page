@@ -1,12 +1,12 @@
 // src/app/(classic)/board/search/SearchClient.tsx
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { TaskWithDesigner } from "@/types/database";
-import BoardTable from "../BoardTable";
+import BoardTable, { getTaskLocation } from "../BoardTable";
 import PaginationClient from "../PaginationClient";
 import WriteButton from "../WriteButton";
 
@@ -17,7 +17,16 @@ const TASK_SELECT =
     "status, is_priority, is_quick, created_at, deleted_at, " +
     "designer:designers(id, name)";
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 50;
+
+// 위치 라벨별 표시 순서
+function locationOrder(label: string): number {
+    if (label === "우선작업") return 0;
+    if (label === "작업중 (미배정)") return 1;
+    if (label === "작업완료") return 3;
+    if (label === "휴지통") return 4;
+    return 2; // 디자이너 이름
+}
 
 export default function SearchPage() {
     const searchParams = useSearchParams();
@@ -109,6 +118,28 @@ export default function SearchPage() {
     useEffect(() => {
         loadResults();
     }, [loadResults]);
+
+    // 위치별 섹션 그룹핑
+    const locationSections = useMemo(() => {
+        type Section = {
+            label: string;
+            bg: string;
+            color: string;
+            border: string;
+            tasks: TaskWithDesigner[];
+        };
+        const map = new Map<string, Section>();
+        for (const task of tasks) {
+            const loc = getTaskLocation(task);
+            if (!map.has(loc.label)) {
+                map.set(loc.label, { ...loc, tasks: [] });
+            }
+            map.get(loc.label)!.tasks.push(task);
+        }
+        return Array.from(map.values()).sort(
+            (a, b) => locationOrder(a.label) - locationOrder(b.label),
+        );
+    }, [tasks]);
 
     const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -253,17 +284,74 @@ export default function SearchPage() {
                 </div>
             )}
 
-            {/* 결과 테이블 */}
-            {tasks.length > 0 && (
-                <BoardTable
-                    tasks={tasks}
-                    total={total}
-                    from={from}
-                    designers={designers}
-                    canEditDesigner={isAdmin || isDesigner}
-                    onMutate={loadResults}
-                />
-            )}
+            {/* 위치별 섹션 테이블 */}
+            {locationSections.map((section) => (
+                <div key={section.label} style={{ marginBottom: 32 }}>
+                    {/* 섹션 타이틀 */}
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            padding: "10px 14px",
+                            background: section.bg,
+                            border: `1px solid ${section.border}`,
+                            borderRadius: "8px 8px 0 0",
+                            borderBottom: "none",
+                        }}
+                    >
+                        <span
+                            style={{
+                                fontWeight: 700,
+                                fontSize: 14,
+                                color: section.color,
+                            }}
+                        >
+                            현재 작업물의 위치는{" "}
+                            <span
+                                style={{
+                                    background: section.color,
+                                    color: "#fff",
+                                    padding: "1px 10px",
+                                    borderRadius: 99,
+                                    fontSize: 13,
+                                }}
+                            >
+                                {section.label}
+                            </span>
+                            에 있습니다.
+                        </span>
+                        <span
+                            style={{
+                                marginLeft: "auto",
+                                fontSize: 12,
+                                color: section.color,
+                                opacity: 0.7,
+                            }}
+                        >
+                            {section.tasks.length}건
+                        </span>
+                    </div>
+
+                    {/* 섹션 테이블 */}
+                    <div
+                        style={{
+                            border: `1px solid ${section.border}`,
+                            borderRadius: "0 0 8px 8px",
+                            overflow: "hidden",
+                        }}
+                    >
+                        <BoardTable
+                            tasks={section.tasks}
+                            total={section.tasks.length}
+                            from={0}
+                            designers={designers}
+                            canEditDesigner={isAdmin || isDesigner}
+                            onMutate={loadResults}
+                        />
+                    </div>
+                </div>
+            ))}
 
             <PaginationClient page={page} totalPages={totalPages} />
         </div>

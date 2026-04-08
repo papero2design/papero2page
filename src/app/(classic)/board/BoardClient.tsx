@@ -85,7 +85,7 @@ export default function BoardClient() {
         try {
             const supabase = createClient();
 
-            const defaultSortBy = tab === "done" ? "completed_at" : "created_at";
+            const defaultSortBy = "created_at";
             const sortBy = fSortBy || defaultSortBy;
             const sortAsc = fSortDir === "asc";
 

@@ -1,9 +1,9 @@
 // src/app/(classic)/board/designers/[id]/DesignerBoardClient.tsx
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { TaskWithDesigner } from "@/types/database";
 import BoardTable from "../../BoardTable";
@@ -15,7 +15,7 @@ import FilterBar from "../../FilterBar";
 const TASK_SELECT =
     "id, task_number, order_source, customer_name, order_method, order_method_note, " +
     "print_items, post_processing, file_paths, " +
-    "consult_path, consult_link, special_details, registered_by, " +
+    "consult_path, consult_link, special_details, registered_by, group_id, " +
     "status, is_priority, is_quick, created_at, deleted_at, " +
     "designer:designers(id, name)";
 
@@ -51,10 +51,15 @@ export default function DesignerBoardClient({
     allDesigners: allDesignersProp,
 }: Props) {
     const searchParams = useSearchParams();
+    const router = useRouter();
+    const pathname = usePathname();
     const [tasks, setTasks] = useState<TaskWithDesigner[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
     const [initialLoad, setInitialLoad] = useState(true);
+
+    // 완료 탭 날짜 필터: true = 전체 보기, false = 날짜 필터 적용
+    const [doneShowAll, setDoneShowAll] = useState(false);
 
     // props로 받은 경우 즉시 초기화, 없으면 fetch
     const [designer, setDesigner] = useState<DesignerData | null>(null);
@@ -71,6 +76,8 @@ export default function DesignerBoardClient({
     const [tabCounts, setTabCounts] = useState({
         work: 0,
         done: 0,
+        todayDone: 0,
+        priorityCount: 0,
     });
 
     // searchParams에서 값 읽기
@@ -84,10 +91,54 @@ export default function DesignerBoardClient({
     const fPrint = searchParams.get("print") ?? "";
     const fPost = searchParams.get("post") ?? "";
     const fConsult = searchParams.get("consult") ?? "";
-    const fDateFrom = searchParams.get("dateFrom") ?? "";
-    const fDateTo = searchParams.get("dateTo") ?? "";
+    const todayDefault = new Date().toISOString().split("T")[0];
+    // 완료 탭: URL에 날짜 없으면 오늘 기본값. 담당작업 탭: 날짜 필터 없음(빈 문자열).
+    const rawDateFrom = searchParams.get("dateFrom");
+    const rawDateTo = searchParams.get("dateTo");
+    const fDateFrom = tab === "done" ? (rawDateFrom ?? todayDefault) : "";
+    const fDateTo   = tab === "done" ? (rawDateTo   ?? todayDefault) : "";
     const fSortBy = searchParams.get("sortBy") ?? "";
     const fSortDir = searchParams.get("sortDir") ?? "";
+
+    // 사용자가 FilterBar에서 날짜를 직접 설정하면 doneShowAll 해제
+    const prevRawDate = useRef({ rawDateFrom, rawDateTo });
+    useEffect(() => {
+        if (
+            (rawDateFrom || rawDateTo) &&
+            (rawDateFrom !== prevRawDate.current.rawDateFrom ||
+                rawDateTo !== prevRawDate.current.rawDateTo)
+        ) {
+            setDoneShowAll(false);
+        }
+        prevRawDate.current = { rawDateFrom, rawDateTo };
+    }, [rawDateFrom, rawDateTo]);
+
+    // 완료 탭 전환 시 doneShowAll 초기화
+    const prevTab = useRef(tab);
+    useEffect(() => {
+        if (tab !== prevTab.current) {
+            setDoneShowAll(false);
+            prevTab.current = tab;
+        }
+    }, [tab]);
+
+    // 전체 보기 / 오늘로 토글 핸들러
+    const handleDoneShowAll = () => {
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete("dateFrom");
+        params.delete("dateTo");
+        params.delete("page");
+        router.push(`${pathname}?${params.toString()}`);
+        setDoneShowAll(true);
+    };
+    const handleDoneShowToday = () => {
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("dateFrom", todayDefault);
+        params.set("dateTo", todayDefault);
+        params.delete("page");
+        router.push(`${pathname}?${params.toString()}`);
+        setDoneShowAll(false);
+    };
 
     // props로 받은 경우 allDesigners 동기화 (새 디자이너 추가 등 반영)
     useEffect(() => {
@@ -185,25 +236,54 @@ export default function DesignerBoardClient({
                 query = query.ilike("print_items", `%${fPrint.trim()}%`);
             if (fPost) query = query.ilike("post_processing", `${fPost}%`);
             if (fConsult) query = query.eq("consult_path", fConsult);
-            if (fDateFrom)
-                query = query.gte("created_at", `${fDateFrom}T00:00:00`);
-            if (fDateTo) query = query.lte("created_at", `${fDateTo}T23:59:59`);
+            // 완료 탭: completed_at 기준, doneShowAll이면 날짜 필터 없음
+            // 담당작업 탭: 날짜 필터 없음
+            if (tab === "done" && !doneShowAll) {
+                if (fDateFrom)
+                    query = query.gte("completed_at", `${fDateFrom}T00:00:00`);
+                if (fDateTo)
+                    query = query.lte("completed_at", `${fDateTo}T23:59:59`);
+            }
+
+            // 오늘 날짜 범위
+            const todayStr = new Date().toISOString().split("T")[0];
+            const todayStart = `${todayStr}T00:00:00`;
+            const todayEnd = `${todayStr}T23:59:59`;
 
             // 작업 목록 + 탭 카운트 동시 조회
             const [taskResult, ...countResults] = await Promise.all([
                 query,
+                // 진행 중 (전체)
                 supabase
                     .from("tasks")
                     .select("id", { count: "exact", head: true })
                     .is("deleted_at", null)
                     .eq("assigned_designer_id", designerId)
                     .neq("status", "완료"),
+                // 완료 (전체 — 탭 배지용)
                 supabase
                     .from("tasks")
                     .select("id", { count: "exact", head: true })
                     .is("deleted_at", null)
                     .eq("assigned_designer_id", designerId)
                     .eq("status", "완료"),
+                // 오늘 완료 (프로필 통계용)
+                supabase
+                    .from("tasks")
+                    .select("id", { count: "exact", head: true })
+                    .is("deleted_at", null)
+                    .eq("assigned_designer_id", designerId)
+                    .eq("status", "완료")
+                    .gte("completed_at", todayStart)
+                    .lte("completed_at", todayEnd),
+                // 우선작업 진행 중 (프로필 통계용)
+                supabase
+                    .from("tasks")
+                    .select("id", { count: "exact", head: true })
+                    .is("deleted_at", null)
+                    .eq("assigned_designer_id", designerId)
+                    .neq("status", "완료")
+                    .eq("is_priority", true),
             ]);
 
             setTasks((taskResult.data ?? []) as unknown as TaskWithDesigner[]);
@@ -211,6 +291,8 @@ export default function DesignerBoardClient({
             setTabCounts({
                 work: countResults[0].count ?? 0,
                 done: countResults[1].count ?? 0,
+                todayDone: countResults[2].count ?? 0,
+                priorityCount: countResults[3].count ?? 0,
             });
 
             window.dispatchEvent(new Event("board-refresh"));
@@ -233,6 +315,7 @@ export default function DesignerBoardClient({
         fConsult,
         fDateFrom,
         fDateTo,
+        doneShowAll,
         fSortBy,
         fSortDir,
     ]);
@@ -244,9 +327,9 @@ export default function DesignerBoardClient({
     const totalPages = Math.ceil(total / PAGE_SIZE);
 
     const stats = {
-        active: 0,
-        done: tabCounts.done,
-        priority: 0,
+        active: tabCounts.work,
+        done: tabCounts.todayDone,
+        priority: tabCounts.priorityCount,
         statusMap: {} as Record<string, number>,
     };
 
@@ -426,6 +509,59 @@ export default function DesignerBoardClient({
                 </p>
             </div>
 
+            {/* 완료 탭: 날짜 범위 토글 */}
+            {tab === "done" && (
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        paddingBottom: 8,
+                        paddingTop: 4,
+                    }}
+                >
+                    <button
+                        onClick={handleDoneShowToday}
+                        style={{
+                            padding: "3px 12px",
+                            borderRadius: 99,
+                            border: `1px solid ${!doneShowAll ? "#15803d" : "#e5e7eb"}`,
+                            background: !doneShowAll ? "#f0fdf4" : "#fff",
+                            color: !doneShowAll ? "#15803d" : "#6b7280",
+                            fontWeight: 600,
+                            fontSize: 12,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                        }}
+                    >
+                        오늘
+                    </button>
+                    <button
+                        onClick={handleDoneShowAll}
+                        style={{
+                            padding: "3px 12px",
+                            borderRadius: 99,
+                            border: `1px solid ${doneShowAll ? "#6b7280" : "#e5e7eb"}`,
+                            background: doneShowAll ? "#f9fafb" : "#fff",
+                            color: doneShowAll ? "#374151" : "#9ca3af",
+                            fontWeight: 600,
+                            fontSize: 12,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                        }}
+                    >
+                        전체
+                    </button>
+                    {!doneShowAll && (
+                        <span style={{ fontSize: 12, color: "#9ca3af" }}>
+                            {fDateFrom === fDateTo
+                                ? fDateFrom
+                                : `${fDateFrom} ~ ${fDateTo}`}
+                        </span>
+                    )}
+                </div>
+            )}
+
             <FilterBar
                 currentStatus=""
                 currentMethod={fMethod}
@@ -433,10 +569,11 @@ export default function DesignerBoardClient({
                 currentPrint={fPrint}
                 currentPost={fPost}
                 currentConsult={fConsult}
-                currentDateFrom={fDateFrom}
-                currentDateTo={fDateTo}
+                currentDateFrom={tab === "done" && !doneShowAll ? fDateFrom : ""}
+                currentDateTo={tab === "done" && !doneShowAll ? fDateTo : ""}
                 currentSortBy={fSortBy}
                 currentSortDir={fSortDir || "desc"}
+                hideDateFilter={tab === "work"}
             />
 
             <BoardTable

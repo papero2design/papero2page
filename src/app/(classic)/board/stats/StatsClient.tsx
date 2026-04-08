@@ -69,7 +69,7 @@ function addDays(d: Date, n: number) {
 export default function StatsClient() {
     const today = toYMD(new Date());
 
-    const [dateFrom, setDateFrom] = useState(toYMD(addDays(new Date(), -29)));
+    const [dateFrom, setDateFrom] = useState(today);
     const [dateTo, setDateTo] = useState(today);
     const [calMonth, setCalMonth] = useState(() => new Date());
 

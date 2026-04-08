@@ -32,6 +32,7 @@ interface Props {
     currentDateTo: string;
     currentSortBy: string;
     currentSortDir: string;
+    hideDateFilter?: boolean;
 }
 
 export default function FilterBar({
@@ -45,6 +46,7 @@ export default function FilterBar({
     currentDateTo,
     currentSortBy,
     currentSortDir,
+    hideDateFilter = false,
 }: Props) {
     const router = useRouter();
     const pathname = usePathname();
@@ -166,30 +168,32 @@ export default function FilterBar({
                 />
 
                 {/* 날짜 범위 */}
-                <div
-                    style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4,
-                        flexShrink: 0,
-                    }}
-                >
-                    <input
-                        type="date"
-                        value={currentDateFrom}
-                        onChange={(e) => setParam("dateFrom", e.target.value)}
-                        style={dateInput(!!currentDateFrom)}
-                        title="시작일"
-                    />
-                    <span style={{ color: "#9ca3af" }}>~</span>
-                    <input
-                        type="date"
-                        value={currentDateTo}
-                        onChange={(e) => setParam("dateTo", e.target.value)}
-                        style={dateInput(!!currentDateTo)}
-                        title="종료일"
-                    />
-                </div>
+                {!hideDateFilter && (
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                            flexShrink: 0,
+                        }}
+                    >
+                        <input
+                            type="date"
+                            value={currentDateFrom}
+                            onChange={(e) => setParam("dateFrom", e.target.value)}
+                            style={dateInput(!!currentDateFrom)}
+                            title="시작일"
+                        />
+                        <span style={{ color: "#9ca3af" }}>~</span>
+                        <input
+                            type="date"
+                            value={currentDateTo}
+                            onChange={(e) => setParam("dateTo", e.target.value)}
+                            style={dateInput(!!currentDateTo)}
+                            title="종료일"
+                        />
+                    </div>
+                )}
 
                 {/* 구분선 */}
                 <div

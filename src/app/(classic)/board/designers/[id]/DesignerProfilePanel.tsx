@@ -504,7 +504,7 @@ export default function DesignerProfilePanel({
             border: "#e5e7eb",
         },
         {
-            label: "완료",
+            label: "오늘 완료",
             value: stats.done,
             color: "#15803d",
             bg: "#f0fdf4",

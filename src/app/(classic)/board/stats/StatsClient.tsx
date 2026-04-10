@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Download } from "lucide-react";
 import { useToast } from "../Toast";
@@ -61,9 +62,9 @@ function getWeekRange(dateStr: string): { from: string; to: string } {
     const diff = day === 0 ? -6 : 1 - day; // 월요일 기준
     const mon = new Date(d);
     mon.setDate(d.getDate() + diff);
-    const sun = new Date(mon);
-    sun.setDate(mon.getDate() + 6);
-    return { from: toYMD(mon), to: toYMD(sun) };
+    const fri = new Date(mon);
+    fri.setDate(mon.getDate() + 4); // 금요일 (월~금)
+    return { from: toYMD(mon), to: toYMD(fri) };
 }
 
 function getMonthRange(year: number, month: number): { from: string; to: string } {
@@ -124,6 +125,7 @@ const tdStyle: React.CSSProperties = {
 // ─── 메인 컴포넌트 ────────────────────────────────────────────
 export default function StatsClient() {
     const today = toYMD(new Date());
+    const router = useRouter();
     const { showToast, ToastUI } = useToast();
     const supabase = createClient();
 
@@ -142,6 +144,7 @@ export default function StatsClient() {
     });
     const [loading, setLoading] = useState(false);
     const [initLoaded, setInitLoaded] = useState(false);
+
 
     // ── 초기 로드: 디자이너 목록 + 탭 순서 ──
     useEffect(() => {
@@ -284,6 +287,17 @@ export default function StatsClient() {
     }, [rangeFrom, rangeTo, designers, initLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => { loadStats(); }, [loadStats]);
+
+    // ── 디자이너 완료 내역으로 이동 ──
+    const goToDesigner = useCallback((designerId: string) => {
+        const params = new URLSearchParams({
+            designer: designerId,
+            tab: "done",
+            dateFrom: rangeFrom,
+            dateTo: rangeTo,
+        });
+        router.push(`/board?${params.toString()}`);
+    }, [rangeFrom, rangeTo, router]);
 
     // ── 날짜 선택 핸들러 ──
     const handleModeChange = (m: Mode) => {
@@ -492,8 +506,8 @@ export default function StatsClient() {
                             let outline = "none";
 
                             if (inRange) {
-                                bg = (isEdgeDay || singleDay) ? "#111827" : "#f3f4f6";
-                                textColor = (isEdgeDay || singleDay) ? "#fff" : "#111827";
+                                bg = "#111827";
+                                textColor = "#fff";
                             } else if (cnt > 0) {
                                 bg = `rgba(30, 214, 125, ${intensity})`;
                             }
@@ -652,7 +666,7 @@ export default function StatsClient() {
                             </thead>
                             <tbody>
                                 {stats.designers.filter((d) => d.total > 0).map((d, i) => (
-                                    <tr key={d.id} style={{ borderTop: "1px solid #f3f4f6", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                                    <tr key={d.id} onClick={() => goToDesigner(d.id)} style={{ borderTop: "1px solid #f3f4f6", background: i % 2 === 0 ? "#fff" : "#fafafa", cursor: "pointer" }}>
                                         <td style={{ ...tdStyle, textAlign: "left", paddingLeft: 20, fontWeight: 600 }}>
                                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                                 {d.avatar_url ? (
@@ -715,7 +729,7 @@ export default function StatsClient() {
 
                     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                         {stats.designers.filter((d) => d.total > 0).map((d) => (
-                            <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                            <div key={d.id} onClick={() => goToDesigner(d.id)} style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", borderRadius: 6, padding: "2px 4px", transition: "background 0.1s" }}>
                                 {/* 이름 */}
                                 <div style={{ width: 110, display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                                     {d.avatar_url ? (
@@ -761,6 +775,7 @@ export default function StatsClient() {
                     <div style={{ fontSize: 14 }}>{periodLabel} 완료된 작업이 없습니다.</div>
                 </div>
             )}
+
         </div>
     );
 }

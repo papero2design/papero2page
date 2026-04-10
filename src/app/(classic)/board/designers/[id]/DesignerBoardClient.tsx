@@ -335,7 +335,7 @@ export default function DesignerBoardClient({
 
     const TABS: { key: Tab; label: string; count: number }[] = [
         { key: "work", label: "담당작업", count: tabCounts.work },
-        { key: "done", label: "완료", count: tabCounts.done },
+        { key: "done", label: "완료", count: tabCounts.todayDone },
     ];
 
     const buildTabUrl = (t: Tab) => {

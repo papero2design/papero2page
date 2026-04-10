@@ -1,24 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import {
-    Download,
-    CalendarDays,
-    BarChart2,
-    Users,
-    BarChart3,
-} from "lucide-react";
+import { Download } from "lucide-react";
 import { useToast } from "../Toast";
-import * as XLSX from "xlsx-js-style"; // 엑셀 파일용 라이브러리
+import * as XLSX from "xlsx-js-style";
+
+// ─── 타입 ──────────────────────────────────────────────────────
+type Mode = "day" | "week" | "month";
 
 type Designer = { id: string; name: string; avatar_url: string | null };
-type DayData = {
-    date: string;
-    count: number;
-    priority: number;
-    normal: number;
-};
+
+type DayData = { date: string; count: number; priority: number; normal: number };
+
 type DesignerStat = {
     id: string;
     name: string;
@@ -29,16 +23,22 @@ type DesignerStat = {
     byMethod: Record<string, number>;
 };
 
+type RangeStats = {
+    completed: number;
+    registered: number;
+    priorityRegistered: number;
+    deleted: number;
+    byMethod: Record<string, number>;
+    designers: DesignerStat[];
+    days: DayData[];
+};
+
+// ─── 상수 ──────────────────────────────────────────────────────
 const ORDER_METHODS = [
-    "샘플디자인 의뢰",
-    "재주문(글자수정)",
-    "인쇄만 의뢰",
-    "재주문(수정없는)",
-    "디자인 복원",
-    "신규 디자인",
-    "디자인 수정",
-    "기타",
+    "샘플디자인 의뢰", "재주문(글자수정)", "인쇄만 의뢰",
+    "재주문(수정없는)", "디자인 복원", "신규 디자인", "디자인 수정", "기타",
 ];
+
 const METHOD_COLORS: Record<string, string> = {
     "샘플디자인 의뢰": "#3B82F6",
     "재주문(글자수정)": "#1ED67D",
@@ -47,227 +47,302 @@ const METHOD_COLORS: Record<string, string> = {
     "디자인 복원": "#F59E0B",
     "신규 디자인": "#06B6D4",
     "디자인 수정": "#EC4899",
-    기타: "#9CA3AF",
+    "기타": "#9CA3AF",
 };
 
-const PRESETS = [
-    { label: "오늘", days: 0 },
-    { label: "이번 주", days: 6 },
-    { label: "이번 달", days: 29 },
-    { label: "3개월", days: 89 },
-] as const;
-
-function toYMD(d: Date) {
+// ─── 헬퍼 ──────────────────────────────────────────────────────
+function toYMD(d: Date): string {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-function addDays(d: Date, n: number) {
-    const r = new Date(d);
-    r.setDate(r.getDate() + n);
-    return r;
+
+function getWeekRange(dateStr: string): { from: string; to: string } {
+    const d = new Date(dateStr + "T00:00:00");
+    const day = d.getDay(); // 0=일
+    const diff = day === 0 ? -6 : 1 - day; // 월요일 기준
+    const mon = new Date(d);
+    mon.setDate(d.getDate() + diff);
+    const sun = new Date(mon);
+    sun.setDate(mon.getDate() + 6);
+    return { from: toYMD(mon), to: toYMD(sun) };
 }
 
+function getMonthRange(year: number, month: number): { from: string; to: string } {
+    const mm = String(month + 1).padStart(2, "0");
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    return {
+        from: `${year}-${mm}-01`,
+        to: `${year}-${mm}-${String(lastDay).padStart(2, "0")}`,
+    };
+}
+
+function fmtPeriodLabel(from: string, to: string, mode: Mode): string {
+    if (from === to) {
+        const d = new Date(from + "T00:00:00");
+        const week = ["일", "월", "화", "수", "목", "금", "토"][d.getDay()];
+        return `${from.replace(/-/g, ".")} (${week})`;
+    }
+    if (mode === "month") {
+        return `${from.slice(0, 4)}년 ${parseInt(from.slice(5, 7))}월`;
+    }
+    return `${from.replace(/-/g, ".")} ~ ${to.replace(/-/g, ".")}`;
+}
+
+function fmtShortDate(dateStr: string): string {
+    return dateStr.slice(5).replace("-", "/");
+}
+
+// ─── 스타일 상수 ───────────────────────────────────────────────
+const card = (color: string, bg: string, border: string): React.CSSProperties => ({
+    display: "block",
+    padding: "16px 18px",
+    border: `1px solid ${border}`,
+    borderRadius: 10,
+    background: bg,
+    textDecoration: "none",
+    transition: "box-shadow 0.15s",
+});
+
+const thStyle: React.CSSProperties = {
+    padding: "8px 12px",
+    textAlign: "center",
+    fontSize: 12,
+    fontWeight: 600,
+    color: "#6b7280",
+    borderBottom: "1px solid #e5e7eb",
+    whiteSpace: "normal",
+    wordBreak: "keep-all",
+    background: "#f9fafb",
+};
+
+const tdStyle: React.CSSProperties = {
+    padding: "9px 12px",
+    textAlign: "center",
+    fontSize: 13,
+    color: "#374151",
+};
+
+// ─── 메인 컴포넌트 ────────────────────────────────────────────
 export default function StatsClient() {
     const today = toYMD(new Date());
-
-    const [dateFrom, setDateFrom] = useState(today);
-    const [dateTo, setDateTo] = useState(today);
-    const [calMonth, setCalMonth] = useState(() => new Date());
-
-    const [designers, setDesigners] = useState<Designer[]>([]);
-    const [overallCounts, setOverallCounts] = useState({
-        priority: 0,
-        active: 0,
-        done: 0,
-        trash: 0,
-    });
-    const [overallLoading, setOverallLoading] = useState(true);
-
-    const [dayData, setDayData] = useState<DayData[]>([]);
-    const [designerStats, setDesignerStats] = useState<DesignerStat[]>([]);
-    const [totalDone, setTotalDone] = useState(0);
-    const [loading, setLoading] = useState(false);
     const { showToast, ToastUI } = useToast();
-
     const supabase = createClient();
 
-    // 전체 현황 + 디자이너 목록 초기 로드
+    // 날짜 선택 상태
+    const [mode, setMode] = useState<Mode>("day");
+    const [rangeFrom, setRangeFrom] = useState(today);
+    const [rangeTo, setRangeTo] = useState(today);
+    const [calMonth, setCalMonth] = useState(() => new Date());
+
+    // 데이터 상태
+    const [designers, setDesigners] = useState<Designer[]>([]);
+    const [heatmap, setHeatmap] = useState<Record<string, number>>({});
+    const [stats, setStats] = useState<RangeStats>({
+        completed: 0, registered: 0, priorityRegistered: 0, deleted: 0,
+        byMethod: {}, designers: [], days: [],
+    });
+    const [loading, setLoading] = useState(false);
+    const [initLoaded, setInitLoaded] = useState(false);
+
+    // ── 초기 로드: 디자이너 목록 + 탭 순서 ──
     useEffect(() => {
-        const fetchOverall = async () => {
-            setOverallLoading(true);
-            const [p, a, d, t, des] = await Promise.all([
-                supabase
-                    .from("tasks")
-                    .select("id", { count: "exact", head: true })
-                    .is("deleted_at", null)
-                    .neq("status", "완료")
-                    .eq("is_priority", true),
-                supabase
-                    .from("tasks")
-                    .select("id", { count: "exact", head: true })
-                    .is("deleted_at", null)
-                    .neq("status", "완료"),
-                supabase
-                    .from("tasks")
-                    .select("id", { count: "exact", head: true })
-                    .is("deleted_at", null)
-                    .eq("status", "완료"),
-                supabase
-                    .from("tasks")
-                    .select("id", { count: "exact", head: true })
-                    .not("deleted_at", "is", null),
-                supabase
-                    .from("designers")
-                    .select("id, name, avatar_url")
-                    .eq("is_active", true)
-                    .order("name"),
+        const init = async () => {
+            const [desRes, orderRes] = await Promise.all([
+                supabase.from("designers").select("id, name, avatar_url").eq("is_active", true).order("name"),
+                supabase.from("app_settings").select("value").eq("key", "designer_tab_order").single(),
             ]);
-            setOverallCounts({
-                priority: p.count ?? 0,
-                active: a.count ?? 0,
-                done: d.count ?? 0,
-                trash: t.count ?? 0,
-            });
-            setDesigners(des.data ?? []);
-            setOverallLoading(false);
+            const raw = desRes.data ?? [];
+            const order: string[] = orderRes.data?.value ?? [];
+
+            if (order.length > 0) {
+                const map = new Map(raw.map((d) => [d.id, d]));
+                const sorted: Designer[] = [];
+                order.forEach((id) => { const d = map.get(id); if (d) sorted.push(d); });
+                raw.forEach((d) => { if (!order.includes(d.id)) sorted.push(d); });
+                setDesigners(sorted);
+            } else {
+                setDesigners(raw);
+            }
+            setInitLoaded(true);
         };
-        fetchOverall();
+        init();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // designers를 파라미터로 받아 클로저 race condition 방지
-    const load = async (from: string, to: string, designerList: Designer[]) => {
+    // ── 히트맵: 캘린더 이동 시 해당 월 완료 수 조회 ──
+    const loadHeatmap = useCallback(async () => {
+        const { from, to } = getMonthRange(calMonth.getFullYear(), calMonth.getMonth());
+        const { data } = await supabase
+            .from("tasks")
+            .select("completed_at")
+            .eq("status", "완료")
+            .is("deleted_at", null)
+            .gte("completed_at", `${from}T00:00:00`)
+            .lte("completed_at", `${to}T23:59:59`)
+            .limit(5000);
+        const map: Record<string, number> = {};
+        (data ?? []).forEach((r) => {
+            if (r.completed_at) {
+                const d = r.completed_at.split("T")[0];
+                map[d] = (map[d] ?? 0) + 1;
+            }
+        });
+        setHeatmap(map);
+    }, [calMonth]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => { loadHeatmap(); }, [loadHeatmap]);
+
+    // ── 통계: 선택 기간 변경 시 조회 ──
+    const loadStats = useCallback(async () => {
+        if (!initLoaded || designers.length === 0) return;
         setLoading(true);
         try {
-            const { data } = await supabase
-                .from("tasks")
-                .select(
-                    "id, completed_at, assigned_designer_id, is_priority, order_method",
-                )
-                .eq("status", "완료")
-                .is("deleted_at", null)
-                .gte("completed_at", `${from}T00:00:00`)
-                .lte("completed_at", `${to}T23:59:59`)
-                .limit(10000);
+            const fromTs = `${rangeFrom}T00:00:00`;
+            const toTs = `${rangeTo}T23:59:59`;
 
-            const rows = data ?? [];
-            setTotalDone(rows.length);
+            const [completedRes, registeredRes, deletedRes] = await Promise.all([
+                supabase.from("tasks")
+                    .select("id, completed_at, assigned_designer_id, is_priority, order_method")
+                    .eq("status", "완료")
+                    .is("deleted_at", null)
+                    .gte("completed_at", fromTs)
+                    .lte("completed_at", toTs)
+                    .limit(10000),
+                supabase.from("tasks")
+                    .select("id, is_priority")
+                    .is("deleted_at", null)
+                    .gte("created_at", fromTs)
+                    .lte("created_at", toTs)
+                    .limit(10000),
+                supabase.from("tasks")
+                    .select("id", { count: "exact", head: true })
+                    .not("deleted_at", "is", null)
+                    .gte("deleted_at", fromTs)
+                    .lte("deleted_at", toTs),
+            ]);
 
-            // 1. 날짜별 집계
-            const dayMap: Record<string, Omit<DayData, "date">> = {};
-            rows.forEach((r) => {
-                if (!r.completed_at) return;
-                const d = r.completed_at.split("T")[0];
-                if (!dayMap[d])
-                    dayMap[d] = { count: 0, priority: 0, normal: 0 };
+            const completed = completedRes.data ?? [];
+            const registered = registeredRes.data ?? [];
+            const deletedCount = deletedRes.count ?? 0;
+            const priorityRegistered = completed.filter((r) => r.is_priority).length;
 
-                dayMap[d].count++;
-                if (r.is_priority) {
-                    dayMap[d].priority++;
-                } else {
-                    dayMap[d].normal++;
-                }
-            });
-
-            const days: DayData[] = [];
-            const cur = new Date(from);
-            const end = new Date(to);
+            // 날짜별 집계
+            const dayMap: Record<string, DayData> = {};
+            const cur = new Date(rangeFrom + "T00:00:00");
+            const end = new Date(rangeTo + "T00:00:00");
             while (cur <= end) {
                 const d = toYMD(cur);
-                const stat = dayMap[d];
-                days.push({
-                    date: d,
-                    count: stat?.count ?? 0,
-                    priority: stat?.priority ?? 0,
-                    normal: stat?.normal ?? 0,
-                });
+                dayMap[d] = { date: d, count: 0, priority: 0, normal: 0 };
                 cur.setDate(cur.getDate() + 1);
             }
-            setDayData(days);
-
-            // 2. 디자이너별 세부 집계 — 파라미터로 받은 designerList 사용
-            const dMap: Record<string, DesignerStat> = {};
-            designerList.forEach((d) => {
-                dMap[d.id] = {
-                    ...d,
-                    total: 0,
-                    priority: 0,
-                    normal: 0,
-                    byMethod: {},
-                };
-            });
-
-            rows.forEach((r) => {
-                if (!r.assigned_designer_id) return;
-                const stat = dMap[r.assigned_designer_id];
-                if (!stat) return;
-
-                stat.total++;
-                if (r.is_priority) {
-                    stat.priority++;
-                } else {
-                    stat.normal++;
+            completed.forEach((r) => {
+                if (!r.completed_at) return;
+                const d = r.completed_at.split("T")[0];
+                if (dayMap[d]) {
+                    dayMap[d].count++;
+                    if (r.is_priority) dayMap[d].priority++;
+                    else dayMap[d].normal++;
                 }
-                const method = r.order_method ?? "기타";
-                stat.byMethod[method] = (stat.byMethod[method] ?? 0) + 1;
+            });
+            const days = Object.values(dayMap);
+
+            // 디자이너별 집계 (탭 순서 유지)
+            const dMap: Record<string, DesignerStat> = {};
+            designers.forEach((d) => {
+                dMap[d.id] = { ...d, total: 0, priority: 0, normal: 0, byMethod: {} };
+            });
+            completed.forEach((r) => {
+                if (!r.assigned_designer_id) return;
+                const s = dMap[r.assigned_designer_id];
+                if (!s) return;
+                s.total++;
+                if (r.is_priority) s.priority++;
+                else s.normal++;
+                const m = r.order_method ?? "기타";
+                s.byMethod[m] = (s.byMethod[m] ?? 0) + 1;
+            });
+            const designerStats = designers.map((d) => dMap[d.id]).filter(Boolean);
+
+            // 주문방법별 전체 집계
+            const totalByMethod: Record<string, number> = {};
+            completed.forEach((r) => {
+                const m = r.order_method ?? "기타";
+                totalByMethod[m] = (totalByMethod[m] ?? 0) + 1;
             });
 
-            const dStats = Object.values(dMap).sort(
-                (a, b) => b.total - a.total,
-            );
-            setDesignerStats(dStats);
+            setStats({
+                completed: completed.length,
+                registered: registered.length,
+                priorityRegistered,
+                deleted: deletedCount,
+                byMethod: totalByMethod,
+                designers: designerStats,
+                days,
+            });
         } finally {
             setLoading(false);
         }
+    }, [rangeFrom, rangeTo, designers, initLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => { loadStats(); }, [loadStats]);
+
+    // ── 날짜 선택 핸들러 ──
+    const handleModeChange = (m: Mode) => {
+        setMode(m);
+        const now = new Date();
+        if (m === "day") {
+            setRangeFrom(today);
+            setRangeTo(today);
+            setCalMonth(now);
+        } else if (m === "week") {
+            const range = getWeekRange(today);
+            setRangeFrom(range.from);
+            setRangeTo(range.to);
+            setCalMonth(now);
+        } else {
+            const range = getMonthRange(now.getFullYear(), now.getMonth());
+            setRangeFrom(range.from);
+            setRangeTo(range.to);
+            setCalMonth(now);
+        }
     };
 
-    // designers 로드 완료 후 첫 통계 조회 (race condition 방지)
-    useEffect(() => {
-        if (designers.length > 0) {
-            load(dateFrom, dateTo, designers);
+    const handleDayClick = (dateStr: string) => {
+        if (mode === "day") {
+            setRangeFrom(dateStr);
+            setRangeTo(dateStr);
+        } else if (mode === "week") {
+            const range = getWeekRange(dateStr);
+            setRangeFrom(range.from);
+            setRangeTo(range.to);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [designers]);
-
-    // 날짜 변경 시 재조회 (designers가 이미 로드된 경우만)
-    useEffect(() => {
-        if (designers.length > 0) {
-            load(dateFrom, dateTo, designers);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dateFrom, dateTo]);
-
-    const setPreset = (days: number) => {
-        const f = toYMD(addDays(new Date(), -days));
-        setDateFrom(f);
-        setDateTo(today);
-        setCalMonth(new Date());
+        // month 모드에서는 월 네비게이션으로 선택
     };
 
-    const maxCount = Math.max(...dayData.map((d) => d.count), 1);
-    const maxDesigner = Math.max(...designerStats.map((d) => d.total), 1);
+    const handleMonthNav = (delta: number) => {
+        const next = new Date(calMonth);
+        next.setMonth(next.getMonth() + delta);
+        setCalMonth(next);
+        if (mode === "month") {
+            const range = getMonthRange(next.getFullYear(), next.getMonth());
+            setRangeFrom(range.from);
+            setRangeTo(range.to);
+        }
+    };
 
-    const calYear = calMonth.getFullYear();
-    const calMon = calMonth.getMonth();
-    const firstDay = new Date(calYear, calMon, 1).getDay();
-    const daysInMonth = new Date(calYear, calMon + 1, 0).getDate();
-    const calDayMap: Record<string, DayData> = {};
-    dayData.forEach((d) => {
-        calDayMap[d.date] = d;
-    });
-    const calMaxCount = Math.max(
-        ...Object.values(calDayMap).map((d) => d.count),
-        1,
-    );
-
+    // ── 엑셀 다운로드 ──
     const downloadExcel = async () => {
+        const fromTs = `${rangeFrom}T00:00:00`;
+        const toTs = `${rangeTo}T23:59:59`;
         const { data } = await supabase
             .from("tasks")
             .select(
                 "task_number, customer_name, order_source, order_method, order_method_note, print_items, post_processing, consult_path, file_paths, special_details, status, is_priority, created_at, completed_at, deleted_at, designer:designers(name)",
             )
-            .gte("created_at", `${dateFrom}T00:00:00`)
-            .lte("created_at", `${dateTo}T23:59:59`)
-            .order("created_at", { ascending: false })
+            .eq("status", "완료")
+            .is("deleted_at", null)
+            .gte("completed_at", fromTs)
+            .lte("completed_at", toTs)
+            .order("completed_at", { ascending: false })
             .limit(10000);
 
         if (!data?.length) {
@@ -275,666 +350,417 @@ export default function StatsClient() {
             return;
         }
 
-        // 통계 집계용 변수
-        let priority = 0,
-            normal = 0;
-        let done = 0,
-            trash = 0,
-            active = 0;
-        const sourceMap: Record<string, number> = {};
-        const methodMap: Record<string, number> = {};
-
         type Row = (typeof data)[0] & { designer: { name: string } | null };
-
-        const detailRows = (data as Row[]).map((r) => {
-            const isTrash = !!r.deleted_at;
-            if (isTrash) trash++;
-            else if (r.status === "완료") done++;
-            else active++;
-
-            if (r.is_priority) priority++;
-            else normal++;
-
-            const source = r.order_source || "미상";
-            const method = r.order_method || "미상";
-            sourceMap[source] = (sourceMap[source] || 0) + 1;
-            methodMap[method] = (methodMap[method] || 0) + 1;
-
-            const typeStr = r.is_priority ? "우선작업" : "일반작업";
-            const statusStr = isTrash ? "휴지통(삭제)" : r.status;
-            const methodStr = r.order_method_note
-                ? `${method} (${r.order_method_note})`
-                : method;
-
-            return {
-                번호: r.task_number || "-",
-                상태: statusStr,
-                작업유형: typeStr,
-                고객이름: r.customer_name || "-",
-                주문경로: r.order_source || "-",
-                주문방법: methodStr,
-                인쇄항목: r.print_items || "-",
-                후가공: r.post_processing || "없음",
-                상담경로: r.consult_path || "없음",
-                담당디자이너: r.designer?.name ?? "미배정",
-                접수일시: r.created_at?.replace("T", " ").slice(0, 16) || "-",
-                완료일시: r.completed_at?.replace("T", " ").slice(0, 16) || "-",
-                특이사항: r.special_details || "없음",
-            };
-        });
-
-        const summaryRows = [
-            { 구분: "조회 기간", 내용: `${dateFrom} ~ ${dateTo}` },
-            { 구분: "총 접수건", 내용: `${data.length}건` },
-            { 구분: "", 내용: "" },
-            { 구분: "[상태별 현황]", 내용: "" },
-            { 구분: "작업중", 내용: `${active}건` },
-            { 구분: "완료", 내용: `${done}건` },
-            { 구분: "휴지통", 내용: `${trash}건` },
-            { 구분: "", 내용: "" },
-            { 구분: "[작업유형별 현황]", 내용: "" },
-            { 구분: "우선작업", 내용: `${priority}건` },
-            { 구분: "일반작업", 내용: `${normal}건` },
-            { 구분: "", 내용: "" },
-            { 구분: "[주문경로별 현황]", 내용: "" },
-            ...Object.entries(sourceMap).map(([k, v]) => ({
-                구분: k,
-                내용: `${v}건`,
-            })),
-        ];
+        const detailRows = (data as Row[]).map((r) => ({
+            번호: r.task_number || "-",
+            고객이름: r.customer_name || "-",
+            주문경로: r.order_source || "-",
+            주문방법: r.order_method_note ? `${r.order_method} (${r.order_method_note})` : (r.order_method || "-"),
+            인쇄항목: r.print_items || "-",
+            후가공: r.post_processing || "없음",
+            상담경로: r.consult_path || "없음",
+            담당디자이너: r.designer?.name ?? "미배정",
+            작업유형: r.is_priority ? "우선작업" : "일반작업",
+            접수일시: r.created_at?.replace("T", " ").slice(0, 16) || "-",
+            완료일시: r.completed_at?.replace("T", " ").slice(0, 16) || "-",
+            특이사항: r.special_details || "없음",
+        }));
 
         const wb = XLSX.utils.book_new();
-
-        const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
-        wsSummary["!cols"] = [{ wpx: 150 }, { wpx: 200 }];
-        const sumRange = XLSX.utils.decode_range(wsSummary["!ref"] || "A1");
-        for (let R = sumRange.s.r; R <= sumRange.e.r; ++R) {
-            for (let C = sumRange.s.c; C <= sumRange.e.c; ++C) {
-                const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
-                if (!wsSummary[cellRef]) continue;
-                wsSummary[cellRef].s = {
-                    font: { bold: true, color: { rgb: "374151" } },
-                    alignment: { horizontal: "center", vertical: "center" },
-                };
-            }
-        }
-        XLSX.utils.book_append_sheet(wb, wsSummary, "통계 요약");
-
-        const wsDetail = XLSX.utils.json_to_sheet(detailRows);
-        wsDetail["!cols"] = [
-            { wpx: 50 },
-            { wpx: 80 },
-            { wpx: 80 },
-            { wpx: 100 },
-            { wpx: 100 },
-            { wpx: 150 },
-            { wpx: 250 },
-            { wpx: 100 },
-            { wpx: 100 },
-            { wpx: 100 },
-            { wpx: 120 },
-            { wpx: 120 },
-            { wpx: 300 },
-        ];
-        const detRange = XLSX.utils.decode_range(wsDetail["!ref"] || "A1");
-        for (let R = detRange.s.r; R <= detRange.e.r; ++R) {
-            for (let C = detRange.s.c; C <= detRange.e.c; ++C) {
-                const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
-                if (!wsDetail[cellRef]) continue;
-                if (R === 0) {
-                    wsDetail[cellRef].s = {
-                        fill: { fgColor: { rgb: "111827" } },
-                        font: { bold: true, color: { rgb: "FFFFFF" } },
-                        alignment: { horizontal: "center", vertical: "center" },
-                    };
-                } else {
-                    wsDetail[cellRef].s = {
-                        alignment: {
-                            horizontal: C === 12 ? "left" : "center",
-                            vertical: "center",
-                        },
-                    };
-                }
-            }
-        }
-        XLSX.utils.book_append_sheet(wb, wsDetail, "상세 내역");
-
-        XLSX.writeFile(wb, `작업통계_${dateFrom}_${dateTo}.xlsx`);
+        const ws = XLSX.utils.json_to_sheet(detailRows);
+        ws["!cols"] = [40, 80, 60, 120, 160, 80, 80, 80, 70, 130, 130, 200].map((wpx) => ({ wpx }));
+        XLSX.utils.book_append_sheet(wb, ws, "완료 내역");
+        XLSX.writeFile(wb, `작업통계_${rangeFrom}_${rangeTo}.xlsx`);
     };
 
-    const shouldShowLabel = (idx: number, total: number) => {
-        if (total <= 14) return true;
-        if (total <= 35) return idx % 3 === 0;
-        if (total <= 65) return idx % 7 === 0;
-        return idx % 10 === 0;
-    };
-
-    function fmtDate(d: Date) {
-        return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
-    }
+    // ── 렌더 계산값 ──
+    const calYear = calMonth.getFullYear();
+    const calMon = calMonth.getMonth();
+    const firstDay = new Date(calYear, calMon, 1).getDay();
+    const daysInMonth = new Date(calYear, calMon + 1, 0).getDate();
+    const heatmapMax = Math.max(...Object.values(heatmap), 1);
+    const statsMax = Math.max(...stats.days.map((d) => d.count), 1);
+    const designerMax = Math.max(...stats.designers.map((d) => d.total), 1);
+    const periodLabel = fmtPeriodLabel(rangeFrom, rangeTo, mode);
+    const isInRange = (d: string) => d >= rangeFrom && d <= rangeTo;
+    const isEdge = (d: string) => d === rangeFrom || d === rangeTo;
+    const hasDesignerData = stats.designers.some((d) => d.total > 0);
+    const multiDay = stats.days.length > 1;
 
     return (
-        <div className="max-w-6xl mx-auto px-4 py-8 pb-20">
+        <div style={{ maxWidth: 1260, margin: "0 auto", padding: "0 16px 40px" }}>
             {ToastUI}
-            {/* 헤더 */}
-            <div className="mb-8 border-b border-gray-200 pb-6">
-                <h2 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
-                    <BarChart3 className="w-6 h-6 text-gray-700" />
-                    작업 통계 대시보드
-                </h2>
-                <p className="mt-1 text-sm text-gray-500">
-                    {fmtDate(new Date())} 기준 전체 작업 현황
-                </p>
-            </div>
 
-            {/* 전체 현황 카드 */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-                {[
-                    {
-                        label: "우선작업",
-                        value: overallCounts.priority,
-                        href: "/board?tab=priority",
-                    },
-                    {
-                        label: "작업등록",
-                        value: overallCounts.active,
-                        href: "/board?tab=active",
-                    },
-                    {
-                        label: "작업완료",
-                        value: overallCounts.done,
-                        href: "/board?tab=done",
-                    },
-                    {
-                        label: "휴지통",
-                        value: overallCounts.trash,
-                        href: "/board/trash",
-                    },
-                ].map(({ label, value, href }) => (
-                    <a
-                        key={label}
-                        href={href}
-                        className="p-5 rounded-xl border border-gray-200 bg-white flex flex-col justify-between hover:shadow-md hover:border-gray-300 transition-all cursor-pointer"
-                    >
-                        <div className="flex items-center justify-between mb-4">
-                            <span className="text-sm font-medium text-gray-500">
-                                {label}
-                            </span>
-                        </div>
-                        <div className="text-3xl font-bold text-gray-900 tracking-tight">
-                            {overallLoading ? "—" : value}
-                        </div>
-                    </a>
-                ))}
-            </div>
-
-            {/* 동적 통계 */}
-            <div className="space-y-6">
-                {/* 컨트롤 패널 */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex flex-wrap items-center gap-4">
-                        <div className="flex bg-gray-100 p-1 rounded-lg">
-                            {PRESETS.map((p) => {
-                                const isActive =
-                                    dateFrom ===
-                                        toYMD(addDays(new Date(), -p.days)) &&
-                                    dateTo === today;
-                                return (
-                                    <button
-                                        key={p.label}
-                                        onClick={() => setPreset(p.days)}
-                                        className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
-                                            isActive
-                                                ? "bg-white text-gray-900 shadow-sm"
-                                                : "text-gray-500 hover:text-gray-900"
-                                        }`}
-                                    >
-                                        {p.label}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                            <input
-                                type="date"
-                                value={dateFrom}
-                                onChange={(e) => setDateFrom(e.target.value)}
-                                className="px-3 py-1.5 border border-gray-200 rounded-lg outline-none focus:border-gray-900 transition-colors text-gray-700 bg-white"
-                            />
-                            <span className="text-gray-400">~</span>
-                            <input
-                                type="date"
-                                value={dateTo}
-                                onChange={(e) => setDateTo(e.target.value)}
-                                className="px-3 py-1.5 border border-gray-200 rounded-lg outline-none focus:border-gray-900 transition-colors text-gray-700 bg-white"
-                            />
-                        </div>
-                    </div>
-
+            {/* ── 헤더 ── */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, paddingTop: 24, paddingBottom: 16, borderBottom: "1px solid #e5e7eb", marginBottom: 24 }}>
+                <div>
+                    <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#111827" }}>작업 통계</h2>
+                    <p style={{ margin: "3px 0 0", fontSize: 13, color: "#9ca3af" }}>{periodLabel}</p>
+                </div>
+                {/* 모드 버튼 */}
+                <div style={{ display: "flex", gap: 6 }}>
+                    {(["day", "week", "month"] as Mode[]).map((m) => {
+                        const labels = { day: "일간", week: "주간", month: "월간" };
+                        const active = mode === m;
+                        return (
+                            <button
+                                key={m}
+                                onClick={() => handleModeChange(m)}
+                                style={{
+                                    padding: "6px 16px", borderRadius: 99,
+                                    border: `1px solid ${active ? "#111827" : "#e5e7eb"}`,
+                                    background: active ? "#111827" : "#fff",
+                                    color: active ? "#fff" : "#6b7280",
+                                    fontWeight: 600, fontSize: 13,
+                                    cursor: "pointer", fontFamily: "inherit",
+                                    transition: "all 0.15s",
+                                }}
+                            >
+                                {labels[m]}
+                            </button>
+                        );
+                    })}
                     <button
                         onClick={downloadExcel}
-                        className="flex items-center gap-2 px-4 py-2 border border-gray-200 bg-white text-gray-900 rounded-lg font-medium text-sm hover:bg-gray-50 transition-colors"
+                        style={{
+                            display: "flex", alignItems: "center", gap: 5,
+                            padding: "6px 14px", borderRadius: 99,
+                            border: "1px solid #e5e7eb", background: "#fff",
+                            color: "#6b7280", fontWeight: 600, fontSize: 13,
+                            cursor: "pointer", fontFamily: "inherit",
+                        }}
                     >
-                        <Download className="w-4 h-4" />
-                        엑셀 파일(.xlsx) 다운로드
+                        <Download size={13} />
+                        엑셀
                     </button>
                 </div>
+            </div>
 
-                {loading ? (
-                    <div className="py-20 text-center text-gray-400 font-medium">
-                        데이터를 불러오는 중입니다...
+            {/* ── 2열 그리드: 캘린더 + 통계카드 ── */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
+
+                {/* 캘린더 히트맵 */}
+                <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 20 }}>
+                    {/* 월 네비게이션 */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                        <button onClick={() => handleMonthNav(-1)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "#6b7280", lineHeight: 1, padding: "2px 6px" }}>‹</button>
+                        <div style={{ textAlign: "center" }}>
+                            <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>
+                                {calYear}년 {calMon + 1}월
+                            </span>
+                            {mode === "month" && (
+                                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>
+                                    ← → 화살표로 월 선택
+                                </div>
+                            )}
+                            {mode === "week" && (
+                                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>
+                                    날짜 클릭 시 해당 주 선택
+                                </div>
+                            )}
+                            {mode === "day" && (
+                                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>
+                                    날짜 클릭 시 해당 일 선택
+                                </div>
+                            )}
+                        </div>
+                        <button onClick={() => handleMonthNav(1)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "#6b7280", lineHeight: 1, padding: "2px 6px" }}>›</button>
                     </div>
-                ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* 일별 바차트 */}
-                        <div className="bg-white border border-gray-200 rounded-xl p-6">
-                            <div className="flex items-center gap-2 mb-4">
-                                <BarChart2 className="w-5 h-5 text-gray-500" />
-                                <h3 className="font-semibold text-gray-900">
-                                    일별 완료 흐름
-                                </h3>
-                            </div>
 
-                            <div className="flex items-end justify-between gap-[1px] sm:gap-[2px] w-full relative pb-1 mt-4 h-65">
-                                {dayData.map((d, i) => {
-                                    const hPercent =
-                                        d.count > 0
-                                            ? Math.max(
-                                                  2,
-                                                  (d.count / maxCount) * 100,
-                                              )
-                                            : 0;
-                                    const isToday = d.date === today;
-                                    const intensity =
-                                        d.count > 0
-                                            ? Math.max(0.15, d.count / maxCount)
-                                            : 0;
+                    {/* 요일 헤더 */}
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, marginBottom: 4 }}>
+                        {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
+                            <div key={d} style={{ textAlign: "center", fontSize: 12, color: "#9ca3af", fontWeight: 600, paddingBottom: 2 }}>{d}</div>
+                        ))}
+                    </div>
 
-                                    const bgStyle =
-                                        d.count === 0
-                                            ? { backgroundColor: "#f3f4f6" }
-                                            : isToday
-                                              ? { backgroundColor: "#1ED67D" }
-                                              : {
-                                                    backgroundColor: `rgba(17, 24, 39, ${intensity})`,
-                                                };
+                    {/* 날짜 셀 */}
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+                        {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
+                        {Array.from({ length: daysInMonth }).map((_, i) => {
+                            const day = i + 1;
+                            const dateStr = `${calYear}-${String(calMon + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                            const cnt = heatmap[dateStr] ?? 0;
+                            const intensity = cnt > 0 ? Math.max(0.15, cnt / heatmapMax) : 0;
+                            const isToday = dateStr === today;
+                            const inRange = isInRange(dateStr);
+                            const isEdgeDay = isEdge(dateStr);
+                            const singleDay = rangeFrom === rangeTo;
 
+                            let bg = "transparent";
+                            let textColor = cnt > 0 ? (intensity > 0.5 ? "#111827" : "#374151") : "#9ca3af";
+                            let outline = "none";
+
+                            if (inRange) {
+                                bg = (isEdgeDay || singleDay) ? "#111827" : "#f3f4f6";
+                                textColor = (isEdgeDay || singleDay) ? "#fff" : "#111827";
+                            } else if (cnt > 0) {
+                                bg = `rgba(30, 214, 125, ${intensity})`;
+                            }
+                            if (isToday && !inRange) {
+                                outline = "2px solid #111827";
+                                textColor = "#111827";
+                            }
+
+                            return (
+                                <div
+                                    key={dateStr}
+                                    onClick={() => handleDayClick(dateStr)}
+                                    title={cnt > 0 ? `${fmtShortDate(dateStr)}: ${cnt}건 완료` : fmtShortDate(dateStr)}
+                                    style={{
+                                        aspectRatio: "1", borderRadius: 5,
+                                        display: "flex", alignItems: "center", justifyContent: "center",
+                                        fontSize: 12, fontWeight: inRange ? 700 : 400,
+                                        cursor: "pointer",
+                                        background: bg, color: textColor,
+                                        outline, outlineOffset: -2,
+                                        transition: "background 0.1s",
+                                    }}
+                                >
+                                    {day}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* 히트맵 범례 */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 12, justifyContent: "flex-end" }}>
+                        <span style={{ fontSize: 11, color: "#d1d5db" }}>적음</span>
+                        {[0.15, 0.35, 0.55, 0.75, 1.0].map((op) => (
+                            <div key={op} style={{ width: 10, height: 10, borderRadius: 2, background: `rgba(30, 214, 125, ${op})` }} />
+                        ))}
+                        <span style={{ fontSize: 11, color: "#d1d5db" }}>많음</span>
+                    </div>
+                </div>
+
+                {/* 통계 카드 */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                        {[
+                            { label: "완료", sublabel: "완료일 기준", value: stats.completed, color: "#15803d", bg: "#f0fdf4", border: "#bbf7d0", href: "/board?tab=done" },
+                            { label: "등록", sublabel: "접수일 기준", value: stats.registered, color: "#111827", bg: "#f9fafb", border: "#e5e7eb", href: "/board?tab=active" },
+                            { label: "우선 완료", sublabel: "완료일 기준", value: stats.priorityRegistered, color: "#dc2626", bg: "#fef2f2", border: "#fecaca", href: "/board?tab=priority" },
+                            { label: "삭제", sublabel: "삭제일 기준", value: stats.deleted, color: "#9ca3af", bg: "#f9fafb", border: "#e5e7eb", href: "/board/trash" },
+                        ].map(({ label, sublabel, value, color, bg, border, href }) => (
+                            <a key={label} href={href} style={card(color, bg, border)}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                                    <span style={{ fontSize: 12, color: "#6b7280", fontWeight: 600 }}>{label}</span>
+                                    <span style={{ fontSize: 11, color: "#d1d5db", fontWeight: 400 }}>{sublabel}</span>
+                                </div>
+                                <div style={{ fontSize: 30, fontWeight: 800, color: loading ? "#d1d5db" : color, letterSpacing: "-0.5px" }}>
+                                    {loading ? "—" : value}
+                                </div>
+                            </a>
+                        ))}
+                    </div>
+                    {/* 주문방법별 완료 */}
+                    {!loading && stats.completed > 0 && (
+                        <div style={{ padding: "14px 16px", background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                            <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500, marginBottom: 10 }}>주문방법별 완료</div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                                {ORDER_METHODS.filter((m) => (stats.byMethod[m] ?? 0) > 0).map((m) => {
+                                    const cnt = stats.byMethod[m] ?? 0;
+                                    const pct = Math.round((cnt / stats.completed) * 100);
+                                    const barW = (cnt / stats.completed) * 100;
                                     return (
-                                        <div
-                                            key={d.date}
-                                            className="group relative flex flex-col items-center justify-end flex-1 h-full"
-                                        >
-                                            <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[11px] p-2.5 rounded-lg shadow-xl transition-opacity whitespace-nowrap z-50 pointer-events-none min-w-[100px]">
-                                                <div className="font-bold border-b border-gray-700 pb-1.5 mb-1.5 text-center">
-                                                    {d.date.replace(/-/g, ".")}{" "}
-                                                    <span className="text-[#1ED67D]">
-                                                        총 {d.count}건
-                                                    </span>
+                                        <div key={m}>
+                                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                                                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                                    <div style={{ width: 7, height: 7, borderRadius: 2, background: METHOD_COLORS[m], flexShrink: 0 }} />
+                                                    <span style={{ fontSize: 12, color: "#374151" }}>{m}</span>
                                                 </div>
-                                                <div className="flex flex-col gap-1 text-gray-300">
-                                                    <div className="flex justify-between gap-3">
-                                                        <span>우선작업</span>{" "}
-                                                        <span className="font-medium text-white">
-                                                            {d.priority}건
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex justify-between gap-3">
-                                                        <span>일반작업</span>{" "}
-                                                        <span className="font-medium text-[#1ED67D]">
-                                                            {d.normal}건
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-gray-900"></div>
-                                            </div>
-                                            <div
-                                                style={{
-                                                    height: `${hPercent}%`,
-                                                    ...bgStyle,
-                                                }}
-                                                className="w-full max-w-[24px] rounded-t-[2px] transition-all duration-300"
-                                            />
-                                            {shouldShowLabel(
-                                                i,
-                                                dayData.length,
-                                            ) && (
-                                                <span
-                                                    className={`absolute -bottom-5 text-[9px] whitespace-nowrap ${
-                                                        isToday
-                                                            ? "text-[#1ED67D] font-bold"
-                                                            : "text-gray-400"
-                                                    }`}
-                                                >
-                                                    {d.date
-                                                        .slice(5)
-                                                        .replace("-", "/")}
+                                                <span style={{ fontSize: 12, fontWeight: 700, color: "#111827" }}>
+                                                    {cnt}<span style={{ fontWeight: 400, color: "#9ca3af", marginLeft: 3 }}>{pct}%</span>
                                                 </span>
-                                            )}
+                                            </div>
+                                            <div style={{ height: 5, borderRadius: 3, background: "#f3f4f6", overflow: "hidden" }}>
+                                                <div style={{ width: `${barW}%`, height: "100%", background: METHOD_COLORS[m], borderRadius: 3, transition: "width 0.3s" }} />
+                                            </div>
                                         </div>
                                     );
                                 })}
                             </div>
                         </div>
+                    )}
 
-                        {/* 월간 히트맵 */}
-                        <div className="bg-white border border-gray-200 rounded-xl p-6">
-                            <div className="flex items-center justify-between mb-6">
-                                <div className="flex items-center gap-2">
-                                    <CalendarDays className="w-5 h-5 text-gray-500" />
-                                    <h3 className="font-semibold text-gray-900">
-                                        월간 작업 히트맵
-                                    </h3>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <button
-                                        onClick={() =>
-                                            setCalMonth(
-                                                (m) =>
-                                                    new Date(
-                                                        m.getFullYear(),
-                                                        m.getMonth() - 1,
-                                                        1,
-                                                    ),
-                                            )
-                                        }
-                                        className="p-1 text-gray-400 hover:text-gray-900 rounded transition-colors"
-                                    >
-                                        ‹
-                                    </button>
-                                    <span className="font-medium text-gray-900 text-sm">
-                                        {calYear}.{" "}
-                                        {String(calMon + 1).padStart(2, "0")}
-                                    </span>
-                                    <button
-                                        onClick={() =>
-                                            setCalMonth(
-                                                (m) =>
-                                                    new Date(
-                                                        m.getFullYear(),
-                                                        m.getMonth() + 1,
-                                                        1,
-                                                    ),
-                                            )
-                                        }
-                                        className="p-1 text-gray-400 hover:text-gray-900 rounded transition-colors"
-                                    >
-                                        ›
-                                    </button>
-                                </div>
+                    {/* 기간 요약 */}
+                    <div style={{ padding: "14px 16px", background: "#f9fafb", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                        <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4, fontWeight: 500 }}>선택 기간</div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: "#111827" }}>{periodLabel}</div>
+                        {!loading && stats.completed > 0 && (
+                            <div style={{ marginTop: 10, fontSize: 13, color: "#6b7280" }}>
+                                완료 <strong style={{ color: "#15803d" }}>{stats.completed}</strong>건 중{" "}
+                                우선 <strong style={{ color: "#dc2626" }}>{stats.designers.reduce((s, d) => s + d.priority, 0)}</strong>건 ·{" "}
+                                일반 <strong style={{ color: "#374151" }}>{stats.designers.reduce((s, d) => s + d.normal, 0)}</strong>건
                             </div>
+                        )}
+                    </div>
+                </div>
+            </div>
 
-                            <div className="grid grid-cols-7 gap-1">
-                                {["일", "월", "화", "수", "목", "금", "토"].map(
-                                    (d) => (
-                                        <div
-                                            key={d}
-                                            className="text-center text-[11px] text-gray-400 font-medium py-1"
-                                        >
-                                            {d}
-                                        </div>
-                                    ),
-                                )}
-                                {Array.from({ length: firstDay }).map(
-                                    (_, i) => (
-                                        <div key={`e${i}`} />
-                                    ),
-                                )}
-                                {Array.from({ length: daysInMonth }).map(
-                                    (_, i) => {
-                                        const day = i + 1;
-                                        const dStr = `${calYear}-${String(calMon + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                                        const dayStat = calDayMap[dStr];
-                                        const cnt = dayStat?.count ?? 0;
-                                        const intensity =
-                                            cnt > 0
-                                                ? Math.max(
-                                                      0.15,
-                                                      cnt / calMaxCount,
-                                                  )
-                                                : 0;
-                                        const isToday2 = dStr === today;
+            {/* ── 일별 완료 추이 (다일 기간일 때만) ── */}
+            {multiDay && stats.days.length > 0 && (
+                <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: "#111827", marginBottom: 16 }}>일별 완료 추이</div>
+                    <div style={{ display: "flex", alignItems: "flex-end", gap: stats.days.length > 14 ? 2 : 6, height: 90, paddingBottom: 22, position: "relative" }}>
+                        {stats.days.map((d) => {
+                            const h = d.count > 0 ? Math.max(5, (d.count / statsMax) * 80) : 0;
+                            const isToday2 = d.date === today;
+                            const showCount = stats.days.length <= 14 || d.count > 0;
+                            return (
+                                <div key={d.date} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
+                                    {showCount && d.count > 0 && (
+                                        <span style={{ position: "absolute", top: -16, fontSize: 11, fontWeight: 700, color: isToday2 ? "#1ED67D" : "#9ca3af" }}>
+                                            {d.count}
+                                        </span>
+                                    )}
+                                    <div style={{ position: "absolute", bottom: 0, width: "80%", height: `${h}px`, background: isToday2 ? "#1ED67D" : "#111827", borderRadius: "3px 3px 0 0", opacity: isToday2 ? 1 : 0.55, transition: "height 0.3s" }} />
+                                    <span style={{ position: "absolute", bottom: -18, fontSize: 11, color: isToday2 ? "#1ED67D" : "#d1d5db", whiteSpace: "nowrap", fontWeight: isToday2 ? 700 : 400 }}>
+                                        {fmtShortDate(d.date)}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
-                                        return (
-                                            <div
-                                                key={day}
-                                                className="group relative flex flex-col items-center justify-center h-10 rounded-md"
-                                                style={{
-                                                    backgroundColor:
-                                                        cnt > 0
-                                                            ? `rgba(30, 214, 125, ${intensity})`
-                                                            : "transparent",
-                                                    border: isToday2
-                                                        ? "1.5px solid #111827"
-                                                        : "1.5px solid transparent",
-                                                }}
-                                            >
-                                                <span
-                                                    className={`text-[11px] ${
-                                                        cnt > 0
-                                                            ? intensity > 0.6
-                                                                ? "text-gray-900 font-bold"
-                                                                : "text-gray-800 font-medium"
-                                                            : isToday2
-                                                              ? "text-gray-900 font-bold"
-                                                              : "text-gray-400"
-                                                    }`}
-                                                >
-                                                    {day}
-                                                </span>
-
-                                                {cnt > 0 && dayStat && (
-                                                    <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[11px] p-2.5 rounded-lg shadow-xl transition-opacity whitespace-nowrap z-50 pointer-events-none min-w-[100px]">
-                                                        <div className="font-bold border-b border-gray-700 pb-1.5 mb-1.5 text-center">
-                                                            {dStr.replace(
-                                                                /-/g,
-                                                                ".",
-                                                            )}{" "}
-                                                            <span className="text-[#1ED67D]">
-                                                                총 {cnt}건
-                                                            </span>
-                                                        </div>
-                                                        <div className="flex flex-col gap-1 text-gray-300">
-                                                            <div className="flex justify-between gap-3">
-                                                                <span>
-                                                                    우선
-                                                                </span>{" "}
-                                                                <span className="font-medium text-white">
-                                                                    {
-                                                                        dayStat.priority
-                                                                    }
-                                                                    건
-                                                                </span>
-                                                            </div>
-                                                            <div className="flex justify-between gap-3">
-                                                                <span>
-                                                                    일반
-                                                                </span>{" "}
-                                                                <span className="font-medium text-[#1ED67D]">
-                                                                    {
-                                                                        dayStat.normal
-                                                                    }
-                                                                    건
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-gray-900"></div>
+            {/* ── 디자이너 통계 테이블 ── */}
+            {hasDesignerData && (
+                <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden", marginBottom: 20 }}>
+                    <div style={{ padding: "14px 20px", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>디자이너별 완료 현황</span>
+                        <span style={{ fontSize: 12, color: "#9ca3af" }}>탭 순서 기준</span>
+                    </div>
+                    <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <thead>
+                                <tr>
+                                    <th style={{ ...thStyle, textAlign: "left", paddingLeft: 20, width: 130 }}>디자이너</th>
+                                    <th style={{ ...thStyle, width: 60, color: "#15803d" }}>완료</th>
+                                    <th style={{ ...thStyle, width: 54, color: "#dc2626" }}>우선</th>
+                                    <th style={{ ...thStyle, width: 54 }}>일반</th>
+                                    {ORDER_METHODS.map((m) => (
+                                        <th key={m} style={{ ...thStyle, minWidth: 72 }}>
+                                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                                                <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 2, background: METHOD_COLORS[m], flexShrink: 0 }} />
+                                                <span>{m}</span>
+                                            </div>
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {stats.designers.filter((d) => d.total > 0).map((d, i) => (
+                                    <tr key={d.id} style={{ borderTop: "1px solid #f3f4f6", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                                        <td style={{ ...tdStyle, textAlign: "left", paddingLeft: 20, fontWeight: 600 }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                                {d.avatar_url ? (
+                                                    <img src={d.avatar_url} style={{ width: 22, height: 22, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} alt={d.name} />
+                                                ) : (
+                                                    <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#6b7280", flexShrink: 0 }}>
+                                                        {d.name[0]}
                                                     </div>
                                                 )}
+                                                {d.name}
                                             </div>
-                                        );
-                                    },
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* 디자이너별 세부 누적 바차트 */}
-                {!loading && designerStats.length > 0 && (
-                    <div className="bg-white border border-gray-200 rounded-xl p-6">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                            <div className="flex items-center gap-2">
-                                <Users className="w-5 h-5 text-gray-500" />
-                                <h3 className="font-semibold text-gray-900">
-                                    디자이너별 완료 성과
-                                </h3>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-medium text-gray-500">
-                                {ORDER_METHODS.map((m) => (
-                                    <div
-                                        key={m}
-                                        className="flex items-center gap-1.5"
-                                    >
-                                        <div
-                                            className="w-2.5 h-2.5 rounded-sm"
-                                            style={{
-                                                backgroundColor:
-                                                    METHOD_COLORS[m],
-                                            }}
-                                        />
-                                        {m}
-                                    </div>
+                                        </td>
+                                        <td style={{ ...tdStyle, fontWeight: 800, color: "#15803d", fontSize: 15 }}>{d.total}</td>
+                                        <td style={{ ...tdStyle, color: d.priority > 0 ? "#dc2626" : "#e5e7eb", fontWeight: d.priority > 0 ? 600 : 400 }}>{d.priority || "—"}</td>
+                                        <td style={{ ...tdStyle, color: d.normal > 0 ? "#374151" : "#e5e7eb" }}>{d.normal || "—"}</td>
+                                        {ORDER_METHODS.map((m) => {
+                                            const v = d.byMethod[m] ?? 0;
+                                            return (
+                                                <td key={m} style={{ ...tdStyle, color: v > 0 ? "#374151" : "#e5e7eb", fontWeight: v > 0 ? 600 : 400 }}>
+                                                    {v || "—"}
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
                                 ))}
-                            </div>
-                        </div>
+                                {/* 합계 행 */}
+                                {stats.designers.filter((d) => d.total > 0).length > 1 && (
+                                    <tr style={{ borderTop: "2px solid #e5e7eb", background: "#f9fafb" }}>
+                                        <td style={{ ...tdStyle, textAlign: "left", paddingLeft: 20, fontWeight: 700, color: "#6b7280" }}>합계</td>
+                                        <td style={{ ...tdStyle, fontWeight: 800, color: "#15803d", fontSize: 15 }}>{stats.completed}</td>
+                                        <td style={{ ...tdStyle, fontWeight: 700, color: "#dc2626" }}>{stats.designers.reduce((s, d) => s + d.priority, 0) || "—"}</td>
+                                        <td style={{ ...tdStyle, fontWeight: 700, color: "#374151" }}>{stats.designers.reduce((s, d) => s + d.normal, 0) || "—"}</td>
+                                        {ORDER_METHODS.map((m) => {
+                                            const v = stats.designers.reduce((s, d) => s + (d.byMethod[m] ?? 0), 0);
+                                            return <td key={m} style={{ ...tdStyle, fontWeight: v > 0 ? 700 : 400, color: v > 0 ? "#374151" : "#e5e7eb" }}>{v || "—"}</td>;
+                                        })}
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
 
-                        <div className="flex flex-col gap-5">
-                            {designerStats.map((d) => (
-                                <div
-                                    key={d.id}
-                                    className="flex items-center gap-4"
-                                >
-                                    <div className="flex items-center gap-3 w-32 shrink-0">
-                                        {d.avatar_url ? (
-                                            <img
-                                                src={d.avatar_url}
-                                                alt={d.name}
-                                                className="w-7 h-7 rounded-full object-cover border border-gray-200"
-                                            />
-                                        ) : (
-                                            <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-s font-medium text-gray-600">
-                                                {d.name[0]}
-                                            </div>
-                                        )}
-                                        <span className="text-s font-medium text-gray-700 truncate">
-                                            {d.name}
-                                        </span>
-                                    </div>
-
-                                    <div className="flex-1 h-5 flex items-center group relative cursor-pointer">
-                                        <div
-                                            className="h-full flex rounded-sm overflow-hidden"
-                                            style={{
-                                                width: `${d.total > 0 ? Math.max(2, (d.total / maxDesigner) * 100) : 0}%`,
-                                            }}
-                                        >
-                                            {ORDER_METHODS.map((m) => {
-                                                const count =
-                                                    d.byMethod[m] ?? 0;
-                                                if (count === 0) return null;
-                                                return (
-                                                    <div
-                                                        key={m}
-                                                        className="h-full transition-all"
-                                                        style={{
-                                                            width: `${(count / d.total) * 100}%`,
-                                                            backgroundColor:
-                                                                METHOD_COLORS[
-                                                                    m
-                                                                ],
-                                                        }}
-                                                    />
-                                                );
-                                            })}
-                                            {Object.entries(d.byMethod)
-                                                .filter(
-                                                    ([m]) =>
-                                                        !ORDER_METHODS.includes(
-                                                            m,
-                                                        ),
-                                                )
-                                                .map(([m, count]) => (
-                                                    <div
-                                                        key={m}
-                                                        className="h-full transition-all bg-gray-400"
-                                                        style={{
-                                                            width: `${(count / d.total) * 100}%`,
-                                                        }}
-                                                    />
-                                                ))}
-                                        </div>
-                                        <span className="text-gray-900 text-sm font-semibold ml-3 w-8 shrink-0">
-                                            {d.total > 0
-                                                ? `${d.total}건`
-                                                : "0건"}
-                                        </span>
-
-                                        {d.total > 0 && (
-                                            <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/4 bg-gray-900 text-white text-[11px] p-2.5 rounded-lg shadow-xl transition-opacity whitespace-nowrap z-50 pointer-events-none min-w-[140px]">
-                                                <div className="font-bold border-b border-gray-700 pb-1.5 mb-1.5 text-center">
-                                                    {d.name}{" "}
-                                                    <span className="text-[#1ED67D]">
-                                                        총 {d.total}건
-                                                    </span>
-                                                </div>
-                                                <div className="flex flex-col gap-1 text-gray-300">
-                                                    {ORDER_METHODS.map((m) => {
-                                                        const count =
-                                                            d.byMethod[m] ?? 0;
-                                                        if (count === 0)
-                                                            return null;
-                                                        return (
-                                                            <div
-                                                                key={m}
-                                                                className="flex justify-between gap-3"
-                                                            >
-                                                                <span className="flex items-center gap-1.5">
-                                                                    <span
-                                                                        className="inline-block w-2 h-2 rounded-sm shrink-0"
-                                                                        style={{
-                                                                            backgroundColor:
-                                                                                METHOD_COLORS[
-                                                                                    m
-                                                                                ],
-                                                                        }}
-                                                                    />
-                                                                    {m}
-                                                                </span>
-                                                                <span className="font-medium text-white">
-                                                                    {count}건
-                                                                </span>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                    {Object.entries(d.byMethod)
-                                                        .filter(
-                                                            ([m]) =>
-                                                                !ORDER_METHODS.includes(
-                                                                    m,
-                                                                ),
-                                                        )
-                                                        .map(([m, count]) => (
-                                                            <div
-                                                                key={m}
-                                                                className="flex justify-between gap-3"
-                                                            >
-                                                                <span>{m}</span>
-                                                                <span className="font-medium text-white">
-                                                                    {count}건
-                                                                </span>
-                                                            </div>
-                                                        ))}
-                                                </div>
-                                                <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-gray-900"></div>
-                                            </div>
-                                        )}
-                                    </div>
+            {/* ── 디자이너 가로 막대 그래프 ── */}
+            {hasDesignerData && (
+                <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>디자이너별 완료 성과</span>
+                        {/* 범례 */}
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", justifyContent: "flex-end" }}>
+                            {ORDER_METHODS.map((m) => (
+                                <div key={m} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#6b7280" }}>
+                                    <div style={{ width: 8, height: 8, borderRadius: 2, background: METHOD_COLORS[m], flexShrink: 0 }} />
+                                    {m}
                                 </div>
                             ))}
                         </div>
                     </div>
-                )}
-            </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {stats.designers.filter((d) => d.total > 0).map((d) => (
+                            <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                                {/* 이름 */}
+                                <div style={{ width: 110, display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                                    {d.avatar_url ? (
+                                        <img src={d.avatar_url} style={{ width: 22, height: 22, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} alt={d.name} />
+                                    ) : (
+                                        <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#6b7280", flexShrink: 0 }}>
+                                            {d.name[0]}
+                                        </div>
+                                    )}
+                                    <span style={{ fontSize: 13, fontWeight: 600, color: "#374151", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
+                                </div>
+
+                                {/* 막대 */}
+                                <div style={{ flex: 1, display: "flex", height: 22, borderRadius: 4, overflow: "hidden", background: "#f3f4f6", position: "relative" }}>
+                                    {ORDER_METHODS.map((m) => {
+                                        const cnt = d.byMethod[m] ?? 0;
+                                        if (!cnt) return null;
+                                        const pct = (cnt / designerMax) * 100;
+                                        return (
+                                            <div
+                                                key={m}
+                                                title={`${m}: ${cnt}건`}
+                                                style={{ width: `${pct}%`, background: METHOD_COLORS[m], transition: "width 0.3s", flexShrink: 0 }}
+                                            />
+                                        );
+                                    })}
+                                </div>
+
+                                {/* 총 수 */}
+                                <div style={{ width: 36, textAlign: "right", fontWeight: 800, fontSize: 14, color: "#15803d", flexShrink: 0 }}>
+                                    {d.total}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* 데이터 없음 */}
+            {!loading && stats.completed === 0 && (
+                <div style={{ textAlign: "center", padding: "60px 0", color: "#9ca3af" }}>
+                    <div style={{ fontSize: 32, marginBottom: 10 }}>📊</div>
+                    <div style={{ fontSize: 14 }}>{periodLabel} 완료된 작업이 없습니다.</div>
+                </div>
+            )}
         </div>
     );
 }

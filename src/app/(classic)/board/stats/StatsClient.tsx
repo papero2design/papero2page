@@ -34,6 +34,18 @@ type RangeStats = {
     days: DayData[];
 };
 
+type CsMember = { id: string; name: string; avatar_url: string | null };
+
+type CsMemberStat = {
+    id: string;
+    name: string;
+    avatar_url: string | null;
+    total: number;
+    priority: number;
+    normal: number;
+    byMethod: Record<string, number>;
+};
+
 // ─── 상수 ──────────────────────────────────────────────────────
 const ORDER_METHODS = [
     "샘플디자인 의뢰", "재주문(글자수정)", "인쇄만 의뢰",
@@ -137,23 +149,30 @@ export default function StatsClient() {
 
     // 데이터 상태
     const [designers, setDesigners] = useState<Designer[]>([]);
+    const [csMembers, setCsMembers] = useState<CsMember[]>([]);
     const [heatmap, setHeatmap] = useState<Record<string, number>>({});
     const [stats, setStats] = useState<RangeStats>({
         completed: 0, registered: 0, priorityRegistered: 0, deleted: 0,
         byMethod: {}, designers: [], days: [],
     });
+    const [csStats, setCsStats] = useState<CsMemberStat[]>([]);
     const [loading, setLoading] = useState(false);
     const [initLoaded, setInitLoaded] = useState(false);
 
 
-    // ── 초기 로드: 디자이너 목록 + 탭 순서 ──
+    // ── 초기 로드: 디자이너 목록 + CS 목록 + 탭 순서 ──
     useEffect(() => {
         const init = async () => {
-            const [desRes, orderRes] = await Promise.all([
-                supabase.from("designers").select("id, name, avatar_url").eq("is_active", true).order("name"),
+            const [desRes, csRes, orderRes] = await Promise.all([
+                supabase.from("designers").select("id, name, avatar_url, member_type").eq("is_active", true).order("name"),
+                supabase.from("designers").select("id, name, avatar_url").eq("is_active", true).eq("member_type", "cs").order("name"),
                 supabase.from("app_settings").select("value").eq("key", "designer_tab_order").single(),
             ]);
-            const raw = desRes.data ?? [];
+            const allMembers = desRes.data ?? [];
+            // 디자이너만 필터 (member_type이 'cs'가 아닌 것)
+            const raw: Designer[] = allMembers
+                .filter((d) => (d as Designer & { member_type?: string }).member_type !== "cs")
+                .map(({ id, name, avatar_url }) => ({ id, name, avatar_url }));
             const order: string[] = orderRes.data?.value ?? [];
 
             if (order.length > 0) {
@@ -165,6 +184,7 @@ export default function StatsClient() {
             } else {
                 setDesigners(raw);
             }
+            setCsMembers(csRes.data ?? []);
             setInitLoaded(true);
         };
         init();
@@ -196,13 +216,13 @@ export default function StatsClient() {
 
     // ── 통계: 선택 기간 변경 시 조회 ──
     const loadStats = useCallback(async () => {
-        if (!initLoaded || designers.length === 0) return;
+        if (!initLoaded) return;
         setLoading(true);
         try {
             const fromTs = `${rangeFrom}T00:00:00`;
             const toTs = `${rangeTo}T23:59:59`;
 
-            const [completedRes, registeredRes, deletedRes] = await Promise.all([
+            const [completedRes, registeredRes, deletedRes, csRegisteredRes] = await Promise.all([
                 supabase.from("tasks")
                     .select("id, completed_at, assigned_designer_id, is_priority, order_method")
                     .eq("status", "완료")
@@ -221,12 +241,23 @@ export default function StatsClient() {
                     .not("deleted_at", "is", null)
                     .gte("deleted_at", fromTs)
                     .lte("deleted_at", toTs),
+                // CS팀 등록 건: registered_by와 created_at 기준
+                csMembers.length > 0
+                    ? supabase.from("tasks")
+                        .select("id, registered_by, is_priority, order_method, created_at")
+                        .is("deleted_at", null)
+                        .gte("created_at", fromTs)
+                        .lte("created_at", toTs)
+                        .in("registered_by", csMembers.map((c) => c.name))
+                        .limit(10000)
+                    : Promise.resolve({ data: [] }),
             ]);
 
             const completed = completedRes.data ?? [];
             const registered = registeredRes.data ?? [];
             const deletedCount = deletedRes.count ?? 0;
             const priorityRegistered = completed.filter((r) => r.is_priority).length;
+            const csRegistered = (csRegisteredRes as { data: { id: string; registered_by: string | null; is_priority: boolean; order_method: string | null }[] }).data ?? [];
 
             // 날짜별 집계
             const dayMap: Record<string, DayData> = {};
@@ -281,10 +312,31 @@ export default function StatsClient() {
                 designers: designerStats,
                 days,
             });
+
+            // CS팀 개인별 등록 집계
+            if (csMembers.length > 0) {
+                const csNameMap: Record<string, CsMemberStat> = {};
+                csMembers.forEach((c) => {
+                    csNameMap[c.name] = { ...c, total: 0, priority: 0, normal: 0, byMethod: {} };
+                });
+                csRegistered.forEach((r) => {
+                    const name = r.registered_by ?? "";
+                    const s = csNameMap[name];
+                    if (!s) return;
+                    s.total++;
+                    if (r.is_priority) s.priority++;
+                    else s.normal++;
+                    const m = r.order_method ?? "기타";
+                    s.byMethod[m] = (s.byMethod[m] ?? 0) + 1;
+                });
+                setCsStats(csMembers.map((c) => csNameMap[c.name]).filter(Boolean));
+            } else {
+                setCsStats([]);
+            }
         } finally {
             setLoading(false);
         }
-    }, [rangeFrom, rangeTo, designers, initLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [rangeFrom, rangeTo, designers, csMembers, initLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => { loadStats(); }, [loadStats]);
 
@@ -764,6 +816,86 @@ export default function StatsClient() {
                                 </div>
                             </div>
                         ))}
+                    </div>
+                </div>
+            )}
+
+            {/* ── CS팀 등록 통계 ── */}
+            {csMembers.length > 0 && (
+                <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden", marginBottom: 20 }}>
+                    <div style={{ padding: "14px 20px", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>CS팀 개인별 등록 현황</span>
+                        <span style={{ padding: "2px 8px", borderRadius: 99, background: "#eff6ff", color: "#1d4ed8", fontWeight: 700, fontSize: 11, border: "1px solid #bfdbfe" }}>
+                            접수일 기준
+                        </span>
+                        <span style={{ marginLeft: "auto", fontSize: 12, color: "#9ca3af" }}>
+                            합계 {loading ? "—" : csStats.reduce((s, c) => s + c.total, 0)}건
+                        </span>
+                    </div>
+                    <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <thead>
+                                <tr>
+                                    <th style={{ ...thStyle, textAlign: "left", paddingLeft: 20, width: 130 }}>CS팀</th>
+                                    <th style={{ ...thStyle, width: 60, color: "#1d4ed8" }}>등록</th>
+                                    <th style={{ ...thStyle, width: 54, color: "#dc2626" }}>우선</th>
+                                    <th style={{ ...thStyle, width: 54 }}>일반</th>
+                                    {ORDER_METHODS.map((m) => (
+                                        <th key={m} style={{ ...thStyle, minWidth: 72 }}>
+                                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                                                <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 2, background: METHOD_COLORS[m], flexShrink: 0 }} />
+                                                <span>{m}</span>
+                                            </div>
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {loading ? (
+                                    <tr><td colSpan={4 + ORDER_METHODS.length} style={{ ...tdStyle, color: "#d1d5db", textAlign: "center" }}>로딩 중...</td></tr>
+                                ) : csStats.length === 0 || csStats.every((c) => c.total === 0) ? (
+                                    <tr><td colSpan={4 + ORDER_METHODS.length} style={{ ...tdStyle, color: "#9ca3af", textAlign: "center", padding: "20px" }}>이 기간에 등록된 작업이 없습니다.</td></tr>
+                                ) : (
+                                    <>
+                                        {csStats.map((c, i) => (
+                                            <tr key={c.id} style={{ borderTop: "1px solid #f3f4f6", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                                                <td style={{ ...tdStyle, textAlign: "left", paddingLeft: 20, fontWeight: 600 }}>
+                                                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                                        {c.avatar_url ? (
+                                                            <img src={c.avatar_url} style={{ width: 22, height: 22, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} alt={c.name} />
+                                                        ) : (
+                                                            <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#dbeafe", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#1d4ed8", flexShrink: 0 }}>
+                                                                {c.name[0]}
+                                                            </div>
+                                                        )}
+                                                        {c.name}
+                                                    </div>
+                                                </td>
+                                                <td style={{ ...tdStyle, fontWeight: 800, color: "#1d4ed8", fontSize: 15 }}>{c.total || "—"}</td>
+                                                <td style={{ ...tdStyle, color: c.priority > 0 ? "#dc2626" : "#e5e7eb", fontWeight: c.priority > 0 ? 600 : 400 }}>{c.priority || "—"}</td>
+                                                <td style={{ ...tdStyle, color: c.normal > 0 ? "#374151" : "#e5e7eb" }}>{c.normal || "—"}</td>
+                                                {ORDER_METHODS.map((m) => {
+                                                    const v = c.byMethod[m] ?? 0;
+                                                    return <td key={m} style={{ ...tdStyle, color: v > 0 ? "#374151" : "#e5e7eb", fontWeight: v > 0 ? 600 : 400 }}>{v || "—"}</td>;
+                                                })}
+                                            </tr>
+                                        ))}
+                                        {csStats.filter((c) => c.total > 0).length > 1 && (
+                                            <tr style={{ borderTop: "2px solid #e5e7eb", background: "#f0f7ff" }}>
+                                                <td style={{ ...tdStyle, textAlign: "left", paddingLeft: 20, fontWeight: 700, color: "#1d4ed8" }}>합계</td>
+                                                <td style={{ ...tdStyle, fontWeight: 800, color: "#1d4ed8", fontSize: 15 }}>{csStats.reduce((s, c) => s + c.total, 0)}</td>
+                                                <td style={{ ...tdStyle, fontWeight: 700, color: "#dc2626" }}>{csStats.reduce((s, c) => s + c.priority, 0) || "—"}</td>
+                                                <td style={{ ...tdStyle, fontWeight: 700, color: "#374151" }}>{csStats.reduce((s, c) => s + c.normal, 0) || "—"}</td>
+                                                {ORDER_METHODS.map((m) => {
+                                                    const v = csStats.reduce((s, c) => s + (c.byMethod[m] ?? 0), 0);
+                                                    return <td key={m} style={{ ...tdStyle, fontWeight: v > 0 ? 700 : 400, color: v > 0 ? "#374151" : "#e5e7eb" }}>{v || "—"}</td>;
+                                                })}
+                                            </tr>
+                                        )}
+                                    </>
+                                )}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             )}

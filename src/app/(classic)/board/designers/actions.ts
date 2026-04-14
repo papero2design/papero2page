@@ -21,15 +21,19 @@ async function assertAdmin() {
     return { supabase, userId: user.id };
 }
 
-// ── 디자이너 계정 생성 ────────────────────────────────────────
+// ── 디자이너 / CS팀 계정 생성 ─────────────────────────────────
 export async function createDesignerAccount(data: {
     name: string;
     email: string;
     password: string;
     status: string;
+    member_type?: "designer" | "cs";
 }) {
     await assertAdmin();
     const adminClient = createAdminClient();
+
+    const memberType = data.member_type ?? "designer";
+    const profileRole = memberType === "cs" ? "cs" : "designer";
 
     // 1. Auth 계정 생성 (user_metadata에 role 제외 — profiles trigger constraint 우회)
     const { data: authData, error: authError } =
@@ -52,11 +56,11 @@ export async function createDesignerAccount(data: {
 
     const newUserId = authData.user.id;
 
-    // 2. profiles 테이블에 role = 'designer' 등록 (트리거로 이미 생성됐을 수 있으므로 upsert)
+    // 2. profiles 테이블에 role 등록 (트리거로 이미 생성됐을 수 있으므로 upsert)
     const { error: profileError } = await adminClient
         .from("profiles")
         .upsert(
-            { id: newUserId, role: "designer", name: data.name },
+            { id: newUserId, role: profileRole, name: data.name },
             { onConflict: "id" },
         );
     if (profileError)
@@ -71,9 +75,10 @@ export async function createDesignerAccount(data: {
             email: data.email,
             is_active: true,
             status: data.status,
+            member_type: memberType,
         });
     if (designerError)
-        throw new Error(`디자이너 등록 실패: ${designerError.message}`);
+        throw new Error(`멤버 등록 실패: ${designerError.message}`);
 
     revalidatePath("/board/designers");
     revalidatePath("/board");
@@ -290,10 +295,52 @@ export async function hardDeleteDesigner(id: string) {
     revalidatePath("/board");
 }
 
-// ── 디자이너 role 변경 (admin ↔ designer) ────────────────────
+// ── 멤버 유형 변경 (designer ↔ cs) ──────────────────────────
+export async function updateMemberType(
+    id: string,
+    memberType: "designer" | "cs",
+) {
+    await assertAdmin();
+    const adminClient = createAdminClient();
+
+    // 1. designers.member_type 업데이트
+    const { error } = await adminClient
+        .from("designers")
+        .update({ member_type: memberType })
+        .eq("id", id);
+    if (error) throw new Error(`유형 변경 실패: ${error.message}`);
+
+    // 2. 연결된 계정이 있으면 profiles.role도 동기화
+    //    (admin은 그대로 유지, designer ↔ cs만 전환)
+    const { data: designer } = await adminClient
+        .from("designers")
+        .select("user_id")
+        .eq("id", id)
+        .single();
+
+    if (designer?.user_id) {
+        const { data: profile } = await adminClient
+            .from("profiles")
+            .select("role")
+            .eq("id", designer.user_id)
+            .single();
+        // admin 권한은 건드리지 않음
+        if (profile?.role !== "admin") {
+            await adminClient
+                .from("profiles")
+                .update({ role: memberType })
+                .eq("id", designer.user_id);
+        }
+    }
+
+    revalidatePath("/board/designers");
+    revalidatePath("/board");
+}
+
+// ── 디자이너 role 변경 (admin ↔ designer ↔ cs) ───────────────
 export async function updateDesignerRole(
     userId: string,
-    newRole: "admin" | "designer",
+    newRole: "admin" | "designer" | "cs",
 ) {
     await assertAdmin();
     const adminClient = createAdminClient();
@@ -319,6 +366,7 @@ export async function fetchDesignersWithRoles(): Promise<
         user_id: string | null;
         email: string;
         role: string | null;
+        member_type: string;
     }[]
 > {
     await assertAdmin();
@@ -326,7 +374,7 @@ export async function fetchDesignersWithRoles(): Promise<
 
     const { data: designers } = await adminClient
         .from("designers")
-        .select("id, name, status, is_active, avatar_url, user_id, email")
+        .select("id, name, status, is_active, avatar_url, user_id, email, member_type")
         .order("name", { ascending: true });
 
     const userIds = (designers ?? [])
@@ -347,6 +395,7 @@ export async function fetchDesignersWithRoles(): Promise<
     return (designers ?? []).map((d) => ({
         ...d,
         email: d.email ?? "",
+        member_type: d.member_type ?? "designer",
         role: d.user_id ? (rolesMap[d.user_id] ?? "designer") : null,
     }));
 }

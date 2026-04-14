@@ -15,6 +15,7 @@ import {
     changeDesignerEmail,
     hardDeleteDesigner,
     updateDesignerRole,
+    updateMemberType,
     fetchDesignersWithRoles,
 } from "./actions";
 
@@ -27,6 +28,7 @@ type Designer = {
     user_id: string | null;
     email: string;
     role: string | null;
+    member_type: string;
 };
 
 const STATUSES = ["연차", "반차", "외출", "작업중", "바쁨"] as const;
@@ -51,6 +53,7 @@ function CreateModal({
         name: "",
         email: "",
         password: "",
+        member_type: "designer" as "designer" | "cs",
     });
     const [isPending, startTransition] = useTransition();
     const [error, setError] = useState("");
@@ -111,7 +114,7 @@ function CreateModal({
                     }}
                 >
                     <span style={{ fontWeight: 800, color: "#111827" }}>
-                        디자이너 계정 추가
+                        {form.member_type === "cs" ? "CS팀 계정 추가" : "디자이너 계정 추가"}
                     </span>
                     <button
                         onClick={onClose}
@@ -147,6 +150,30 @@ function CreateModal({
                             ⚠ {error}
                         </div>
                     )}
+                    {/* 유형 선택 */}
+                    <div style={{ display: "flex", gap: 8 }}>
+                        {(["designer", "cs"] as const).map((t) => (
+                            <button
+                                key={t}
+                                type="button"
+                                onClick={() => setForm((p) => ({ ...p, member_type: t }))}
+                                style={{
+                                    flex: 1,
+                                    padding: "7px",
+                                    borderRadius: 6,
+                                    border: `1px solid ${form.member_type === t ? "#111827" : "#e5e7eb"}`,
+                                    background: form.member_type === t ? "#111827" : "#fff",
+                                    color: form.member_type === t ? "#fff" : "#6b7280",
+                                    fontWeight: 700,
+                                    cursor: "pointer",
+                                    fontFamily: "inherit",
+                                    fontSize: 13,
+                                }}
+                            >
+                                {t === "designer" ? "디자이너" : "CS팀"}
+                            </button>
+                        ))}
+                    </div>
                     <label className="flex justify-center " style={labelStyle}>
                         <span className="w-15 flex self-center">이름</span>
                         <span style={{ color: "#ef4444" }}>*</span>
@@ -366,18 +393,35 @@ function DesignerCard({
             showToast("연결된 계정이 없습니다.");
             return;
         }
-        const newRole = designer.role === "admin" ? "designer" : "admin";
+        // CS팀은 admin ↔ cs 토글, 디자이너는 admin ↔ designer 토글
+        const baseRole = designer.member_type === "cs" ? "cs" : "designer";
+        const newRole = designer.role === "admin" ? baseRole : "admin";
         const label = newRole === "admin" ? "Admin 권한 부여" : "Admin 권한 해제";
         if (!confirm(`"${designer.name}"에게 ${label}할까요?`)) return;
         startTransition(async () => {
             try {
-                await updateDesignerRole(designer.user_id!, newRole);
+                await updateDesignerRole(designer.user_id!, newRole as "admin" | "designer" | "cs");
                 showToast(
                     newRole === "admin"
                         ? "Admin 권한이 부여됐습니다."
                         : "Admin 권한이 해제됐습니다.",
                     "success",
                 );
+                onRefresh();
+            } catch (err) {
+                showToast((err as Error).message);
+            }
+        });
+    };
+
+    const handleMemberTypeToggle = () => {
+        const newType = designer.member_type === "cs" ? "designer" : "cs";
+        const label = newType === "cs" ? "CS팀으로 변경" : "디자이너로 변경";
+        if (!confirm(`"${designer.name}"을(를) ${label}할까요?\n연결된 계정이 있으면 role도 자동으로 변경됩니다.`)) return;
+        startTransition(async () => {
+            try {
+                await updateMemberType(designer.id, newType);
+                showToast(`${newType === "cs" ? "CS팀" : "디자이너"}으로 변경됐습니다.`, "success");
                 onRefresh();
             } catch (err) {
                 showToast((err as Error).message);
@@ -576,9 +620,24 @@ function DesignerCard({
                     </div>
                 ) : (
                     <>
-                        <span style={{ fontWeight: 800, color: "#111827" }}>
-                            {designer.name}
-                        </span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ fontWeight: 800, color: "#111827" }}>
+                                {designer.name}
+                            </span>
+                            {designer.member_type === "cs" && (
+                                <span style={{
+                                    padding: "2px 7px",
+                                    borderRadius: 99,
+                                    background: "#eff6ff",
+                                    color: "#1d4ed8",
+                                    fontWeight: 700,
+                                    fontSize: 11,
+                                    border: "1px solid #bfdbfe",
+                                }}>
+                                    CS팀
+                                </span>
+                            )}
+                        </div>
                         <span
                             style={{
                                 display: "inline-flex",
@@ -767,6 +826,21 @@ function DesignerCard({
                             }}
                         >
                             ✎ 수정
+                        </button>
+                        <button
+                            onClick={handleMemberTypeToggle}
+                            disabled={isPending}
+                            style={{
+                                ...btn(false),
+                                width: "100%",
+                                textAlign: "center",
+                                color: designer.member_type === "cs" ? "#374151" : "#1d4ed8",
+                                borderColor: designer.member_type === "cs" ? "#e5e7eb" : "#bfdbfe",
+                                background: designer.member_type === "cs" ? "#fff" : "#eff6ff",
+                                opacity: isPending ? 0.5 : 1,
+                            }}
+                        >
+                            {designer.member_type === "cs" ? "↩ 디자이너로 변경" : "→ CS팀으로 변경"}
                         </button>
                         {designer.user_id && (
                             <>
@@ -1176,6 +1250,32 @@ function DesignerCard({
     );
 }
 
+// ─── 멤버 그리드 섹션 ─────────────────────────────────────────
+function MemberGrid({
+    members,
+    onRefresh,
+    emptyText,
+}: {
+    members: Designer[];
+    onRefresh: () => void;
+    emptyText: string;
+}) {
+    if (members.length === 0) {
+        return (
+            <div style={{ textAlign: "center", padding: "32px 0", color: "#9ca3af", border: "1px dashed #e5e7eb", borderRadius: 8 }}>
+                {emptyText}
+            </div>
+        );
+    }
+    return (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
+            {members.map((d) => (
+                <DesignerCard key={d.id} designer={d} onRefresh={onRefresh} />
+            ))}
+        </div>
+    );
+}
+
 // ─── 메인 ────────────────────────────────────────────────────
 export default function DesignerManageClient() {
     const [designers, setDesigners] = useState<Designer[]>([]);
@@ -1198,6 +1298,11 @@ export default function DesignerManageClient() {
     const active = designers.filter((d) => d.is_active);
     const inactive = designers.filter((d) => !d.is_active);
 
+    const activeDesigners = active.filter((d) => d.member_type !== "cs");
+    const activeCs = active.filter((d) => d.member_type === "cs");
+    const inactiveDesigners = inactive.filter((d) => d.member_type !== "cs");
+    const inactiveCs = inactive.filter((d) => d.member_type === "cs");
+
     if (loading) {
         return (
             <div style={{ textAlign: "center", padding: "60px 0", color: "#9ca3af" }}>
@@ -1216,112 +1321,64 @@ export default function DesignerManageClient() {
             )}
 
             {/* 헤더 */}
-            <div
-                style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: 24,
-                }}
-            >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
                 <div>
-                    <h2
-                        style={{ margin: 0, fontWeight: 800, color: "#111827" }}
-                    >
-                        디자이너 관리
+                    <h2 style={{ margin: 0, fontWeight: 800, color: "#111827" }}>
+                        멤버 관리
                     </h2>
                     <p style={{ margin: "4px 0 0", color: "#9ca3af" }}>
-                        활성 {active.length}명 · 비활성 {inactive.length}명
+                        디자이너 {activeDesigners.length}명 · CS팀 {activeCs.length}명 · 비활성 {inactive.length}명
                     </p>
                 </div>
                 <button
                     onClick={() => setShowCreate(true)}
-                    style={{
-                        padding: "8px 18px",
-                        background: "#111827",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: 8,
-                        cursor: "pointer",
-                        fontWeight: 700,
-                        fontFamily: "inherit",
-                    }}
+                    style={{ padding: "8px 18px", background: "#111827", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}
                 >
-                    + 디자이너 추가
+                    + 멤버 추가
                 </button>
             </div>
 
-            {/* 활성 디자이너 그리드 */}
-            {active.length === 0 ? (
-                <div
-                    style={{
-                        textAlign: "center",
-                        padding: "40px 0",
-                        color: "#9ca3af",
-                        border: "1px dashed #e5e7eb",
-                        borderRadius: 8,
-                    }}
-                >
-                    등록된 디자이너가 없습니다. [ + 디자이너 추가 ] 버튼으로
-                    계정을 생성하세요.
+            {/* 디자이너 섹션 */}
+            <div style={{ marginBottom: 32 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                    <span style={{ fontWeight: 700, fontSize: 15, color: "#111827" }}>디자이너</span>
+                    <span style={{ fontSize: 13, color: "#9ca3af" }}>{activeDesigners.length}명</span>
                 </div>
-            ) : (
-                <div
-                    style={{
-                        display: "grid",
-                        gridTemplateColumns:
-                            "repeat(auto-fill, minmax(240px, 1fr))",
-                        gap: 16,
-                    }}
-                >
-                    {active.map((d) => (
-                        <DesignerCard
-                            key={d.id}
-                            designer={d}
-                            onRefresh={refresh}
-                        />
-                    ))}
-                </div>
-            )}
+                <MemberGrid members={activeDesigners} onRefresh={refresh} emptyText="등록된 디자이너가 없습니다." />
+            </div>
 
-            {/* 비활성 디자이너 토글 */}
+            {/* CS팀 섹션 */}
+            <div style={{ marginBottom: 32 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                    <span style={{ fontWeight: 700, fontSize: 15, color: "#111827" }}>CS팀</span>
+                    <span style={{ fontSize: 13, color: "#9ca3af" }}>{activeCs.length}명</span>
+                </div>
+                <MemberGrid members={activeCs} onRefresh={refresh} emptyText="등록된 CS팀 멤버가 없습니다." />
+            </div>
+
+            {/* 비활성 멤버 토글 */}
             {inactive.length > 0 && (
-                <div style={{ marginTop: 32 }}>
+                <div style={{ marginTop: 8 }}>
                     <button
                         onClick={() => setShowInactive((p) => !p)}
-                        style={{
-                            background: "none",
-                            border: "none",
-                            cursor: "pointer",
-                            color: "#9ca3af",
-                            fontWeight: 600,
-                            fontFamily: "inherit",
-                            padding: 0,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 4,
-                        }}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontWeight: 600, fontFamily: "inherit", padding: 0, display: "flex", alignItems: "center", gap: 4 }}
                     >
-                        {showInactive ? "▾" : "▸"} 비활성 디자이너{" "}
-                        {inactive.length}명
+                        {showInactive ? "▾" : "▸"} 비활성 멤버 {inactive.length}명
                     </button>
                     {showInactive && (
-                        <div
-                            style={{
-                                display: "grid",
-                                gridTemplateColumns:
-                                    "repeat(auto-fill, minmax(240px, 1fr))",
-                                gap: 16,
-                                marginTop: 12,
-                            }}
-                        >
-                            {inactive.map((d) => (
-                                <DesignerCard
-                                    key={d.id}
-                                    designer={d}
-                                    onRefresh={refresh}
-                                />
-                            ))}
+                        <div style={{ marginTop: 12 }}>
+                            {inactiveDesigners.length > 0 && (
+                                <div style={{ marginBottom: 20 }}>
+                                    <p style={{ fontSize: 13, color: "#9ca3af", marginBottom: 10 }}>디자이너 ({inactiveDesigners.length}명)</p>
+                                    <MemberGrid members={inactiveDesigners} onRefresh={refresh} emptyText="" />
+                                </div>
+                            )}
+                            {inactiveCs.length > 0 && (
+                                <div>
+                                    <p style={{ fontSize: 13, color: "#9ca3af", marginBottom: 10 }}>CS팀 ({inactiveCs.length}명)</p>
+                                    <MemberGrid members={inactiveCs} onRefresh={refresh} emptyText="" />
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

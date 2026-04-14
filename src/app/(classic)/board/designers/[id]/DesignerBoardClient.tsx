@@ -32,6 +32,7 @@ interface DesignerData {
     music_title: string | null;
     music_link: string | null;
     banner_color: string | null;
+    member_type: string | null;
 }
 
 interface Props {
@@ -39,6 +40,7 @@ interface Props {
     // BoardClient에서 이미 조회한 값을 props로 받으면 재조회 생략
     isAdmin?: boolean;
     isDesignerRole?: boolean;
+    isCsRole?: boolean;
     currentUserId?: string | null;
     allDesigners?: { id: string; name: string }[];
 }
@@ -47,6 +49,7 @@ export default function DesignerBoardClient({
     designerId,
     isAdmin: isAdminProp,
     isDesignerRole: isDesignerRoleProp,
+    isCsRole: isCsRoleProp,
     currentUserId: currentUserIdProp,
     allDesigners: allDesignersProp,
 }: Props) {
@@ -66,8 +69,10 @@ export default function DesignerBoardClient({
     const [isOwn, setIsOwn] = useState(false);
     const [isAdmin, setIsAdmin] = useState(isAdminProp ?? false);
     const [canEditDesigner, setCanEditDesigner] = useState(
-        (isAdminProp ?? false) || (isDesignerRoleProp ?? false),
+        (isAdminProp ?? false) || (isDesignerRoleProp ?? false) || (isCsRoleProp ?? false),
     );
+    // 현재 보고 있는 멤버가 CS팀인지 (로드 후 결정)
+    const [isMemberCs, setIsMemberCs] = useState(false);
     const [allDesigners, setAllDesigners] = useState<{ id: string; name: string }[]>(
         allDesignersProp ?? [],
     );
@@ -145,16 +150,21 @@ export default function DesignerBoardClient({
         if (allDesignersProp) setAllDesigners(allDesignersProp);
     }, [allDesignersProp]);
 
+    const DESIGNER_SELECT = "id, name, status, avatar_url, user_id, music_title, music_link, banner_color, member_type";
+
     // 디자이너 정보 재조회 (프로필 수정 후 호출)
     const reloadDesigner = useCallback(async () => {
         const supabase = createClient();
         const { data: d } = await supabase
             .from("designers")
-            .select("id, name, status, avatar_url, user_id, music_title, music_link, banner_color")
+            .select(DESIGNER_SELECT)
             .eq("id", designerId)
             .single();
-        if (d) setDesigner(d as DesignerData);
-    }, [designerId]);
+        if (d) {
+            setDesigner(d as DesignerData);
+            setIsMemberCs(d.member_type === "cs");
+        }
+    }, [designerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // 디자이너 정보 조회 — role/allDesigners는 props로 받으므로 생략
     useEffect(() => {
@@ -164,13 +174,16 @@ export default function DesignerBoardClient({
                 // BoardClient에서 role을 이미 알고 있음 → designer 정보 1건만 조회
                 const { data: d } = await supabase
                     .from("designers")
-                    .select("id, name, status, avatar_url, user_id, music_title, music_link, banner_color")
+                    .select(DESIGNER_SELECT)
                     .eq("id", designerId)
                     .single();
                 if (d) {
-                    setDesigner(d as DesignerData);
+                    const data = d as DesignerData;
+                    setDesigner(data);
+                    setIsMemberCs(data.member_type === "cs");
+                    const isCs = data.member_type === "cs";
                     setIsOwn(
-                        (isDesignerRoleProp ?? false) &&
+                        ((isDesignerRoleProp ?? false) || (isCsRoleProp ?? false) || isCs) &&
                             d.user_id === (currentUserIdProp ?? null),
                     );
                 }
@@ -183,7 +196,7 @@ export default function DesignerBoardClient({
                     supabase.from("profiles").select("role").eq("id", user.id).single(),
                     supabase
                         .from("designers")
-                        .select("id, name, status, avatar_url, user_id, music_title, music_link, banner_color")
+                        .select(DESIGNER_SELECT)
                         .eq("id", designerId)
                         .single(),
                     supabase.from("designers").select("id, name").eq("is_active", true).order("name"),
@@ -192,32 +205,45 @@ export default function DesignerBoardClient({
                 const role = profileRes.data?.role;
                 const admin = role === "admin";
                 const isDesignerRole = role === "designer";
+                const isCsRole = role === "cs";
                 setIsAdmin(admin);
-                setCanEditDesigner(admin || isDesignerRole);
+                setCanEditDesigner(admin || isDesignerRole || isCsRole);
                 if (designerRes.data) {
                     const d = designerRes.data as DesignerData;
                     setDesigner(d);
-                    setIsOwn(isDesignerRole && d.user_id === user.id);
+                    setIsMemberCs(d.member_type === "cs");
+                    setIsOwn((isDesignerRole || isCsRole) && d.user_id === user.id);
                 }
                 setAllDesigners(designersRes.data ?? []);
             }
         };
         load();
-    }, [designerId, isAdminProp, isDesignerRoleProp, currentUserIdProp]);
+    }, [designerId, isAdminProp, isDesignerRoleProp, isCsRoleProp, currentUserIdProp]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // 작업 목록 + 탭 카운트 fetch
     const loadTasks = useCallback(async () => {
+        // designer 로드 전에는 member_type을 알 수 없으므로 대기
+        if (!designer && isAdminProp !== undefined) return;
         setLoading(true);
         try {
             const supabase = createClient();
             const sortBy = fSortBy || "created_at";
             const sortAsc = fSortDir === "asc";
 
+            // CS팀: registered_by(이름) 기준, 디자이너: assigned_designer_id 기준
+            const isCs = isMemberCs;
+            const designerName = designer?.name ?? "";
+
             let query = supabase
                 .from("tasks")
                 .select(TASK_SELECT, { count: "exact" })
-                .is("deleted_at", null)
-                .eq("assigned_designer_id", designerId);
+                .is("deleted_at", null);
+
+            if (isCs) {
+                query = query.eq("registered_by", designerName);
+            } else {
+                query = query.eq("assigned_designer_id", designerId);
+            }
 
             if (tab === "done") {
                 query = query.eq("status", "완료");
@@ -245,45 +271,38 @@ export default function DesignerBoardClient({
                     query = query.lte("completed_at", `${fDateTo}T23:59:59`);
             }
 
+            // CS 등록작업: created_at 기준 날짜 필터 (작업 탭)
+            if (isCs && tab !== "done" && !doneShowAll) {
+                if (fDateFrom)
+                    query = query.gte("created_at", `${fDateFrom}T00:00:00`);
+                if (fDateTo)
+                    query = query.lte("created_at", `${fDateTo}T23:59:59`);
+            }
+
             // 오늘 날짜 범위
             const todayStr = new Date().toISOString().split("T")[0];
             const todayStart = `${todayStr}T00:00:00`;
             const todayEnd = `${todayStr}T23:59:59`;
 
+            // 카운트 쿼리 빌더 (CS/디자이너 분기)
+            const baseCount = () => {
+                const q = supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null);
+                return isCs ? q.eq("registered_by", designerName) : q.eq("assigned_designer_id", designerId);
+            };
+
             // 작업 목록 + 탭 카운트 동시 조회
             const [taskResult, ...countResults] = await Promise.all([
                 query,
                 // 진행 중 (전체)
-                supabase
-                    .from("tasks")
-                    .select("id", { count: "exact", head: true })
-                    .is("deleted_at", null)
-                    .eq("assigned_designer_id", designerId)
-                    .neq("status", "완료"),
+                baseCount().neq("status", "완료"),
                 // 완료 (전체 — 탭 배지용)
-                supabase
-                    .from("tasks")
-                    .select("id", { count: "exact", head: true })
-                    .is("deleted_at", null)
-                    .eq("assigned_designer_id", designerId)
-                    .eq("status", "완료"),
-                // 오늘 완료 (프로필 통계용)
-                supabase
-                    .from("tasks")
-                    .select("id", { count: "exact", head: true })
-                    .is("deleted_at", null)
-                    .eq("assigned_designer_id", designerId)
-                    .eq("status", "완료")
-                    .gte("completed_at", todayStart)
-                    .lte("completed_at", todayEnd),
+                baseCount().eq("status", "완료"),
+                // 오늘 등록 또는 완료 (프로필 통계용)
+                isCs
+                    ? baseCount().gte("created_at", todayStart).lte("created_at", todayEnd)
+                    : baseCount().eq("status", "완료").gte("completed_at", todayStart).lte("completed_at", todayEnd),
                 // 우선작업 진행 중 (프로필 통계용)
-                supabase
-                    .from("tasks")
-                    .select("id", { count: "exact", head: true })
-                    .is("deleted_at", null)
-                    .eq("assigned_designer_id", designerId)
-                    .neq("status", "완료")
-                    .eq("is_priority", true),
+                baseCount().neq("status", "완료").eq("is_priority", true),
             ]);
 
             setTasks((taskResult.data ?? []) as unknown as TaskWithDesigner[]);
@@ -303,9 +322,10 @@ export default function DesignerBoardClient({
             setInitialLoad(false);
         }
     }, [
+        designer,
+        isMemberCs,
         designerId,
         tab,
-        // page,
         from,
         q,
         fMethod,
@@ -318,6 +338,7 @@ export default function DesignerBoardClient({
         doneShowAll,
         fSortBy,
         fSortDir,
+        isAdminProp,
     ]);
 
     useEffect(() => {
@@ -334,8 +355,8 @@ export default function DesignerBoardClient({
     };
 
     const TABS: { key: Tab; label: string; count: number }[] = [
-        { key: "work", label: "담당작업", count: tabCounts.work },
-        { key: "done", label: "완료", count: tabCounts.todayDone },
+        { key: "work", label: isMemberCs ? "등록한 작업" : "담당작업", count: tabCounts.work },
+        { key: "done", label: isMemberCs ? "완료된 등록" : "완료", count: tabCounts.todayDone },
     ];
 
     const buildTabUrl = (t: Tab) => {
@@ -423,6 +444,7 @@ export default function DesignerBoardClient({
                     designer={designer}
                     stats={stats}
                     isOwn={isOwn}
+                    isCs={isMemberCs}
                     onRefresh={reloadDesigner}
                 />
             )}
@@ -484,7 +506,7 @@ export default function DesignerBoardClient({
 
                 <div style={{ flex: 1 }} />
 
-                {isAdmin && (
+                {(isAdmin || isOwn) && (
                     <div
                         style={{
                             display: "flex",

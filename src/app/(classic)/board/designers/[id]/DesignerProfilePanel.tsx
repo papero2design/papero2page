@@ -433,11 +433,13 @@ export default function DesignerProfilePanel({
     designer,
     stats,
     isOwn,
+    isCs,
     onRefresh,
 }: {
     designer: Designer;
     stats: Stats;
     isOwn: boolean;
+    isCs?: boolean;
     onRefresh?: () => void;
 }) {
     const [editing, setEditing] = useState(false);
@@ -497,18 +499,18 @@ export default function DesignerProfilePanel({
 
     const STAT_ITEMS = [
         {
-            label: "진행 중",
+            label: isCs ? "등록한 작업" : "진행 중",
             value: stats.active,
             color: "#111827",
             bg: "#f9fafb",
             border: "#e5e7eb",
         },
         {
-            label: "오늘 완료",
+            label: isCs ? "오늘 등록" : "오늘 완료",
             value: stats.done,
-            color: "#15803d",
-            bg: "#f0fdf4",
-            border: "#bbf7d0",
+            color: isCs ? "#1d4ed8" : "#15803d",
+            bg: isCs ? "#eff6ff" : "#f0fdf4",
+            border: isCs ? "#bfdbfe" : "#bbf7d0",
         },
         {
             label: "우선작업",

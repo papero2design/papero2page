@@ -16,14 +16,27 @@ export async function getIsAdmin(user: User): Promise<boolean> {
 }
 
 /**
- * 현재 유저 + 관리자 여부를 한번에 반환
+ * 현재 유저의 role 문자열 반환 ('admin' | 'designer' | 'cs' | null)
+ */
+export async function getUserRole(user: User): Promise<string | null> {
+    const supabase = await createClient();
+    const { data } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+    return data?.role ?? null;
+}
+
+/**
+ * 현재 유저 + 관리자/CS 여부를 한번에 반환
  */
 export async function getUserWithRole() {
     const supabase = await createClient();
     const {
         data: { user },
     } = await supabase.auth.getUser();
-    if (!user) return { user: null, isAdmin: false };
-    const isAdmin = await getIsAdmin(user);
-    return { user, isAdmin };
+    if (!user) return { user: null, isAdmin: false, isCs: false, role: null };
+    const role = await getUserRole(user);
+    return { user, isAdmin: role === "admin", isCs: role === "cs", role };
 }

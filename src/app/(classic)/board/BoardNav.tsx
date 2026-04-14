@@ -88,8 +88,9 @@ export default function BoardNav() {
             const role = profileRes.data?.role;
             const admin = role === "admin";
             const designer = role === "designer";
+            const cs = role === "cs";
             setIsAdmin(admin);
-            setCanManage(admin || designer);
+            setCanManage(admin || designer || cs);
 
             const raw = designersRes.data ?? [];
             // DB 순서 우선, 없으면 localStorage 폴백

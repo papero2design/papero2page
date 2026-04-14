@@ -8,6 +8,7 @@
 
 export type DesignerStatus = "연차" | "반차" | "외출" | "작업중" | "바쁨";
 export type TaskStatus = "작업중" | "완료";
+export type MemberType = "designer" | "cs";
 
 // ── designers 테이블 ──────────────────────────────────────────
 export interface Designer {
@@ -16,6 +17,7 @@ export interface Designer {
     is_active: boolean;
     status: DesignerStatus;
     avatar_url: string | null;
+    member_type: MemberType;
     created_at: string;
 }
 

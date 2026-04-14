@@ -33,6 +33,7 @@ export default function BoardClient() {
     // 클라이언트에서 직접 조회하는 role/designers
     const [isAdmin, setIsAdmin] = useState(false);
     const [isDesigner, setIsDesigner] = useState(false);
+    const [isCs, setIsCs] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
     const [designers, setDesigners] = useState<{ id: string; name: string }[]>([]);
 
@@ -56,9 +57,11 @@ export default function BoardClient() {
                     .order("name"),
             ]);
 
+            const role = profileRes.data?.role;
             setUserId(user.id);
-            setIsAdmin(profileRes.data?.role === "admin");
-            setIsDesigner(profileRes.data?.role === "designer");
+            setIsAdmin(role === "admin");
+            setIsDesigner(role === "designer");
+            setIsCs(role === "cs");
             setDesigners(designersRes.data ?? []);
         };
         load();
@@ -156,6 +159,7 @@ export default function BoardClient() {
                 designerId={designerId}
                 isAdmin={isAdmin}
                 isDesignerRole={isDesigner}
+                isCsRole={isCs}
                 currentUserId={userId}
                 allDesigners={designers}
             />

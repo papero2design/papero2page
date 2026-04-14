@@ -352,11 +352,22 @@ export default function StatsClient() {
             const dMap: Record<string, DesignerStat> = {};
             // 디자이너 먼저 (탭 순서 유지)
             designers.forEach((d) => {
-                dMap[d.id] = { ...d, member_type: "designer", total: 0, byMethod: {} };
+                dMap[d.id] = {
+                    ...d,
+                    member_type: "designer",
+                    total: 0,
+                    byMethod: {},
+                };
             });
             // CS팀도 추가 (완료 작업이 있을 수 있음)
             csMembers.forEach((c) => {
-                if (!dMap[c.id]) dMap[c.id] = { ...c, member_type: "cs", total: 0, byMethod: {} };
+                if (!dMap[c.id])
+                    dMap[c.id] = {
+                        ...c,
+                        member_type: "cs",
+                        total: 0,
+                        byMethod: {},
+                    };
             });
             completed.forEach((r) => {
                 if (!r.assigned_designer_id) return;
@@ -400,7 +411,9 @@ export default function StatsClient() {
                     const s = csNameMap[name];
                     if (s) s.total++;
                 });
-                setCsStats(csMembers.map((c) => csNameMap[c.name]).filter(Boolean));
+                setCsStats(
+                    csMembers.map((c) => csNameMap[c.name]).filter(Boolean),
+                );
             } else {
                 setCsStats([]);
             }
@@ -1113,9 +1126,18 @@ export default function StatsClient() {
                             {periodLabel}
                         </div>
                         {!loading && stats.completed > 0 && (
-                            <div style={{ marginTop: 10, fontSize: 13, color: "#6b7280" }}>
+                            <div
+                                style={{
+                                    marginTop: 10,
+                                    fontSize: 13,
+                                    color: "#6b7280",
+                                }}
+                            >
                                 완료{" "}
-                                <strong style={{ color: "#15803d" }}>{stats.completed}</strong>건
+                                <strong style={{ color: "#15803d" }}>
+                                    {stats.completed}
+                                </strong>
+                                건
                             </div>
                         )}
                     </div>
@@ -1264,12 +1286,17 @@ export default function StatsClient() {
                         >
                             <thead>
                                 <tr>
-                                    <th style={{ ...thStyle, textAlign: "left", paddingLeft: 20, width: 130 }}>
+                                    <th
+                                        style={{
+                                            ...thStyle,
+                                            textAlign: "left",
+                                            paddingLeft: 20,
+                                            width: 130,
+                                        }}
+                                    >
                                         멤버
                                     </th>
-                                    <th style={{ ...thStyle, width: 60, color: "#15803d" }}>
-                                        완료
-                                    </th>
+
                                     {ORDER_METHODS.map((m) => (
                                         <th
                                             key={m}
@@ -1298,6 +1325,15 @@ export default function StatsClient() {
                                             </div>
                                         </th>
                                     ))}
+                                    <th
+                                        style={{
+                                            ...thStyle,
+                                            width: 60,
+                                            color: "#15803d",
+                                        }}
+                                    >
+                                        완료
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1322,6 +1358,7 @@ export default function StatsClient() {
                                                     textAlign: "left",
                                                     paddingLeft: 20,
                                                     fontWeight: 600,
+                                                    width: 150,
                                                 }}
                                             >
                                                 <div
@@ -1332,20 +1369,69 @@ export default function StatsClient() {
                                                     }}
                                                 >
                                                     {d.avatar_url ? (
-                                                        <img src={d.avatar_url} style={{ width: 22, height: 22, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} alt={d.name} />
+                                                        <img
+                                                            src={d.avatar_url}
+                                                            style={{
+                                                                width: 22,
+                                                                height: 22,
+                                                                borderRadius:
+                                                                    "50%",
+                                                                objectFit:
+                                                                    "cover",
+                                                                flexShrink: 0,
+                                                            }}
+                                                            alt={d.name}
+                                                        />
                                                     ) : (
-                                                        <div style={{ width: 22, height: 22, borderRadius: "50%", background: d.member_type === "cs" ? "#dbeafe" : "#e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: d.member_type === "cs" ? "#1d4ed8" : "#6b7280", flexShrink: 0 }}>
+                                                        <div
+                                                            style={{
+                                                                width: 22,
+                                                                height: 22,
+                                                                borderRadius:
+                                                                    "50%",
+                                                                background:
+                                                                    d.member_type ===
+                                                                    "cs"
+                                                                        ? "#dbeafe"
+                                                                        : "#e5e7eb",
+                                                                display: "flex",
+                                                                alignItems:
+                                                                    "center",
+                                                                justifyContent:
+                                                                    "center",
+                                                                fontSize: 10,
+                                                                fontWeight: 700,
+                                                                color:
+                                                                    d.member_type ===
+                                                                    "cs"
+                                                                        ? "#1d4ed8"
+                                                                        : "#6b7280",
+                                                                flexShrink: 0,
+                                                            }}
+                                                        >
                                                             {d.name[0]}
                                                         </div>
                                                     )}
                                                     {d.name}
                                                     {d.member_type === "cs" && (
-                                                        <span style={{ padding: "1px 6px", borderRadius: 99, background: "#eff6ff", color: "#1d4ed8", fontWeight: 700, fontSize: 10, border: "1px solid #bfdbfe", flexShrink: 0 }}>CS</span>
+                                                        <span
+                                                            style={{
+                                                                padding:
+                                                                    "1px 6px",
+                                                                borderRadius: 99,
+                                                                background:
+                                                                    "#eff6ff",
+                                                                color: "#1d4ed8",
+                                                                fontWeight: 700,
+                                                                fontSize: 10,
+                                                                border: "1px solid #bfdbfe",
+                                                                flexShrink: 0,
+                                                            }}
+                                                        >
+                                                            CS
+                                                        </span>
                                                     )}
                                                 </div>
-                                            </td>
-                                            <td style={{ ...tdStyle, fontWeight: 800, color: "#15803d", fontSize: 15 }}>
-                                                {d.total}
                                             </td>
                                             {ORDER_METHODS.map((m) => {
                                                 const v = d.byMethod[m] ?? 0;
@@ -1368,6 +1454,16 @@ export default function StatsClient() {
                                                     </td>
                                                 );
                                             })}
+                                            <td
+                                                style={{
+                                                    ...tdStyle,
+                                                    fontWeight: 800,
+                                                    color: "#15803d",
+                                                    fontSize: 15,
+                                                }}
+                                            >
+                                                {d.total}
+                                            </td>
                                         </tr>
                                     ))}
                                 {/* 합계 행 */}
@@ -1390,9 +1486,7 @@ export default function StatsClient() {
                                         >
                                             합계
                                         </td>
-                                        <td style={{ ...tdStyle, fontWeight: 800, color: "#15803d", fontSize: 15 }}>
-                                            {stats.completed}
-                                        </td>
+
                                         {ORDER_METHODS.map((m) => {
                                             const v = stats.designers.reduce(
                                                 (s, d) =>
@@ -1416,6 +1510,17 @@ export default function StatsClient() {
                                                 </td>
                                             );
                                         })}
+
+                                        <td
+                                            style={{
+                                                ...tdStyle,
+                                                fontWeight: 800,
+                                                color: "#15803d",
+                                                fontSize: 15,
+                                            }}
+                                        >
+                                            {stats.completed}
+                                        </td>
                                     </tr>
                                 )}
                             </tbody>

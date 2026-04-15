@@ -22,6 +22,7 @@ import {
     clientDeleteTasks,
     clientBulkUpdateDesigner,
     clientBulkComplete,
+    clientBulkSetPriority,
     clientTogglePriority,
     type LogEntry,
 } from "./clientMutations";
@@ -2409,6 +2410,7 @@ function BoardTable({
     const [isPending, startTransition] = useTransition();
     const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
     const [bulkCompleteConfirm, setBulkCompleteConfirm] = useState(false);
+    const [bulkPriorityConfirm, setBulkPriorityConfirm] = useState(false);
     const { showToast, ToastUI } = useToast();
 
     // 묶음 주문 그룹핑: 같은 group_id 끼리 인접하게 재정렬
@@ -2538,6 +2540,19 @@ function BoardTable({
         });
     };
 
+    const handleBulkSetPriority = () => {
+        setBulkPriorityConfirm(false);
+        startTransition(async () => {
+            try {
+                await clientBulkSetPriority(Array.from(checked));
+                setChecked(new Set());
+                onMutate?.();
+            } catch (err) {
+                showToast("우선작업 이동 실패: " + (err as Error).message);
+            }
+        });
+    };
+
     const handleBulkComplete = () => {
         setBulkCompleteConfirm(false);
         startTransition(async () => {
@@ -2576,6 +2591,14 @@ function BoardTable({
                     confirmLabel={`${checked.size}건 완료`}
                     onConfirm={handleBulkComplete}
                     onCancel={() => setBulkCompleteConfirm(false)}
+                />
+            )}
+            {bulkPriorityConfirm && (
+                <ConfirmDialog
+                    message={`선택한 ${checked.size}건을 우선작업으로 이동할까요?`}
+                    confirmLabel={`${checked.size}건 우선작업 이동`}
+                    onConfirm={handleBulkSetPriority}
+                    onCancel={() => setBulkPriorityConfirm(false)}
                 />
             )}
 
@@ -2662,6 +2685,20 @@ function BoardTable({
                     }}
                 >
                     {writeButton}
+                    {hasChecked && searchParams.get("tab") !== "priority" && (
+                        <button
+                            className="bo-btn"
+                            disabled={isPending}
+                            onClick={() => setBulkPriorityConfirm(true)}
+                            style={{
+                                background: "#fff7ed",
+                                color: "#c2410c",
+                                border: "1px solid #fed7aa",
+                            }}
+                        >
+                            우선작업 이동
+                        </button>
+                    )}
                     {hasChecked && (
                         <button
                             className="bo-btn"

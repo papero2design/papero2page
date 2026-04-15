@@ -183,6 +183,24 @@ export async function clientDeleteTasks(ids: string[], reason?: string | null) {
     );
 }
 
+// ── 일괄 우선작업 설정 ────────────────────────────────────────
+export async function clientBulkSetPriority(ids: string[]) {
+    if (!ids.length) return;
+    const { supabase, userId, userName } = await withUser();
+
+    const { error } = await supabase
+        .from("tasks")
+        .update({ is_priority: true })
+        .in("id", ids);
+    if (error) throw new Error(`일괄 우선작업 설정 실패: ${error.message}`);
+
+    await Promise.all(
+        ids.map((id) =>
+            insertLog(supabase, id, userId, userName, "is_priority", "false", "true", "일괄 우선작업 이동"),
+        ),
+    );
+}
+
 // ── 일괄 완료 ─────────────────────────────────────────────────
 export async function clientBulkComplete(
     ids: string[],

@@ -84,6 +84,12 @@ export default function DesignerBoardClient({
         todayDone: 0,
         priorityCount: 0,
     });
+    // 상단 프로필 박스용 디자인 통계 (CS팀도 assigned_designer_id 기준)
+    const [profileStats, setProfileStats] = useState({
+        active: 0,
+        done: 0,
+        priority: 0,
+    });
 
     // searchParams에서 값 읽기
     const tabParam = searchParams.get("tab");
@@ -314,6 +320,35 @@ export default function DesignerBoardClient({
                 priorityCount: countResults[3].count ?? 0,
             });
 
+            // 상단 박스: CS팀도 항상 assigned_designer_id 기준 디자인 통계
+            if (isCs) {
+                const baseDesign = () =>
+                    supabase
+                        .from("tasks")
+                        .select("id", { count: "exact", head: true })
+                        .is("deleted_at", null)
+                        .eq("assigned_designer_id", designerId);
+                const [dsActive, dsTodayDone, dsPriority] = await Promise.all([
+                    baseDesign().neq("status", "완료"),
+                    baseDesign()
+                        .eq("status", "완료")
+                        .gte("completed_at", todayStart)
+                        .lte("completed_at", todayEnd),
+                    baseDesign().neq("status", "완료").eq("is_priority", true),
+                ]);
+                setProfileStats({
+                    active: dsActive.count ?? 0,
+                    done: dsTodayDone.count ?? 0,
+                    priority: dsPriority.count ?? 0,
+                });
+            } else {
+                setProfileStats({
+                    active: countResults[0].count ?? 0,
+                    done: countResults[2].count ?? 0,
+                    priority: countResults[3].count ?? 0,
+                });
+            }
+
             window.dispatchEvent(new Event("board-refresh"));
         } catch (err) {
             console.error("[DesignerBoardClient] loadTasks failed:", err);
@@ -348,9 +383,9 @@ export default function DesignerBoardClient({
     const totalPages = Math.ceil(total / PAGE_SIZE);
 
     const stats = {
-        active: tabCounts.work,
-        done: tabCounts.todayDone,
-        priority: tabCounts.priorityCount,
+        active: profileStats.active,
+        done: profileStats.done,
+        priority: profileStats.priority,
         statusMap: {} as Record<string, number>,
     };
 
@@ -444,7 +479,7 @@ export default function DesignerBoardClient({
                     designer={designer}
                     stats={stats}
                     isOwn={isOwn}
-                    isCs={isMemberCs}
+
                     onRefresh={reloadDesigner}
                 />
             )}

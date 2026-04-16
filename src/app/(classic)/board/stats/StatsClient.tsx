@@ -540,6 +540,7 @@ export default function StatsClient() {
     const heatmapMax = Math.max(...Object.values(heatmap), 1);
     const statsMax = Math.max(...stats.days.map((d) => d.count), 1);
     const designerMax = Math.max(...stats.designers.map((d) => d.total), 1);
+    const csMax = Math.max(...csStats.map((c) => c.total), 1);
     const periodLabel = fmtPeriodLabel(rangeFrom, rangeTo, mode);
     const isInRange = (d: string) => d >= rangeFrom && d <= rangeTo;
     const isEdge = (d: string) => d === rangeFrom || d === rangeTo;
@@ -1961,6 +1962,156 @@ export default function StatsClient() {
                                 )}
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            )}
+
+            {/* ── CS팀 개인별 등록 성과 (바 그래프) ── */}
+            {csMembers.length > 0 && csStats.some((c) => c.total > 0) && (
+                <div
+                    style={{
+                        background: "#fff",
+                        border: "1px solid #e5e7eb",
+                        borderRadius: 12,
+                        padding: "18px 20px",
+                        marginBottom: 20,
+                    }}
+                >
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            marginBottom: 16,
+                        }}
+                    >
+                        <span
+                            style={{
+                                fontWeight: 700,
+                                fontSize: 14,
+                                color: "#111827",
+                            }}
+                        >
+                            CS팀 개인별 등록 성과
+                        </span>
+                    </div>
+
+                    <div
+                        style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 10,
+                        }}
+                    >
+                        {csStats
+                            .filter((c) => c.total > 0)
+                            .map((c) => (
+                                <div
+                                    key={c.id}
+                                    onClick={() => goToDesigner(c.id)}
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 12,
+                                        cursor: "pointer",
+                                        borderRadius: 6,
+                                        padding: "2px 4px",
+                                        transition: "background 0.1s",
+                                    }}
+                                >
+                                    {/* 이름 */}
+                                    <div
+                                        style={{
+                                            width: 110,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 8,
+                                            flexShrink: 0,
+                                        }}
+                                    >
+                                        {c.avatar_url ? (
+                                            <img
+                                                src={c.avatar_url}
+                                                style={{
+                                                    width: 22,
+                                                    height: 22,
+                                                    borderRadius: "50%",
+                                                    objectFit: "cover",
+                                                    flexShrink: 0,
+                                                }}
+                                                alt={c.name}
+                                            />
+                                        ) : (
+                                            <div
+                                                style={{
+                                                    width: 22,
+                                                    height: 22,
+                                                    borderRadius: "50%",
+                                                    background: "#dbeafe",
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    justifyContent: "center",
+                                                    fontSize: 10,
+                                                    fontWeight: 700,
+                                                    color: "#1d4ed8",
+                                                    flexShrink: 0,
+                                                }}
+                                            >
+                                                {c.name[0]}
+                                            </div>
+                                        )}
+                                        <span
+                                            style={{
+                                                fontSize: 13,
+                                                fontWeight: 600,
+                                                color: "#374151",
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap",
+                                            }}
+                                        >
+                                            {c.name}
+                                        </span>
+                                    </div>
+
+                                    {/* 막대 */}
+                                    <div
+                                        style={{
+                                            flex: 1,
+                                            display: "flex",
+                                            height: 22,
+                                            borderRadius: 4,
+                                            overflow: "hidden",
+                                            background: "#f3f4f6",
+                                            position: "relative",
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                width: `${(c.total / csMax) * 100}%`,
+                                                background: "#3b82f6",
+                                                transition: "width 0.3s",
+                                                flexShrink: 0,
+                                                borderRadius: 4,
+                                            }}
+                                        />
+                                    </div>
+
+                                    {/* 총 수 */}
+                                    <div
+                                        style={{
+                                            width: 36,
+                                            textAlign: "right",
+                                            fontWeight: 800,
+                                            fontSize: 14,
+                                            color: "#1d4ed8",
+                                            flexShrink: 0,
+                                        }}
+                                    >
+                                        {c.total}
+                                    </div>
+                                </div>
+                            ))}
                     </div>
                 </div>
             )}

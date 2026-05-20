@@ -80,9 +80,9 @@ export default function BoardNav() {
                 supabase.from("profiles").select("role").eq("id", user.id).single(),
                 supabase.from("designers").select("id, name, avatar_url").eq("is_active", true).order("name"),
                 supabase.from("app_settings").select("value").eq("key", "designer_tab_order").single(),
-                supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null).neq("status", "완료").eq("is_priority", true).is("assigned_designer_id", null),
-                supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null).neq("status", "완료").eq("is_priority", false).is("assigned_designer_id", null),
-                supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null).eq("status", "완료"),
+                supabase.from("tasks").select("id", { count: "estimated", head: true }).is("deleted_at", null).neq("status", "완료").eq("is_priority", true).is("assigned_designer_id", null),
+                supabase.from("tasks").select("id", { count: "estimated", head: true }).is("deleted_at", null).neq("status", "완료").eq("is_priority", false).is("assigned_designer_id", null),
+                supabase.from("tasks").select("id", { count: "estimated", head: true }).is("deleted_at", null).eq("status", "완료"),
             ]);
 
             const role = profileRes.data?.role;
@@ -139,9 +139,9 @@ export default function BoardNav() {
 
         const refreshCounts = async () => {
             const [p, a, d] = await Promise.all([
-                supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null).neq("status", "완료").eq("is_priority", true).is("assigned_designer_id", null),
-                supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null).neq("status", "완료").eq("is_priority", false).is("assigned_designer_id", null),
-                supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null).eq("status", "완료"),
+                supabase.from("tasks").select("id", { count: "estimated", head: true }).is("deleted_at", null).neq("status", "완료").eq("is_priority", true).is("assigned_designer_id", null),
+                supabase.from("tasks").select("id", { count: "estimated", head: true }).is("deleted_at", null).neq("status", "완료").eq("is_priority", false).is("assigned_designer_id", null),
+                supabase.from("tasks").select("id", { count: "estimated", head: true }).is("deleted_at", null).eq("status", "완료"),
             ]);
             setCounts({ priority: p.count ?? 0, active: a.count ?? 0, done: d.count ?? 0 });
 

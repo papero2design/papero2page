@@ -1,9 +1,9 @@
 // src/app/(classic)/board/BoardClient.tsx
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { TaskWithDesigner } from "@/types/database";
 import BoardTable from "./BoardTable";
@@ -25,10 +25,14 @@ export default function BoardClient() {
     const searchParams = useSearchParams();
     const designerId = searchParams.get("designer");
 
+    const router = useRouter();
+    const pathname = usePathname();
+
     const [tasks, setTasks] = useState<TaskWithDesigner[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
     const [initialLoad, setInitialLoad] = useState(true);
+    const [doneShowAll, setDoneShowAll] = useState(false);
 
     // 클라이언트에서 직접 조회하는 role/designers
     const [isAdmin, setIsAdmin] = useState(false);
@@ -78,10 +82,53 @@ export default function BoardClient() {
     const fPrint = searchParams.get("print") ?? "";
     const fPost = searchParams.get("post") ?? "";
     const fConsult = searchParams.get("consult") ?? "";
-    const fDateFrom = searchParams.get("dateFrom") ?? "";
-    const fDateTo = searchParams.get("dateTo") ?? "";
+    const rawDateFrom = searchParams.get("dateFrom");
+    const rawDateTo = searchParams.get("dateTo");
+    const fDateFrom = rawDateFrom ?? "";
+    const fDateTo = rawDateTo ?? "";
     const fSortBy = searchParams.get("sortBy") ?? "";
     const fSortDir = searchParams.get("sortDir") ?? "";
+
+    const todayDefault = new Date().toISOString().split("T")[0];
+    const doneDateFrom = rawDateFrom ?? todayDefault;
+    const doneDateTo = rawDateTo ?? todayDefault;
+
+    const prevTab = useRef(tab);
+    useEffect(() => {
+        if (tab !== prevTab.current) {
+            setDoneShowAll(false);
+            prevTab.current = tab;
+        }
+    }, [tab]);
+
+    const prevRawDate = useRef({ rawDateFrom, rawDateTo });
+    useEffect(() => {
+        if (
+            (rawDateFrom || rawDateTo) &&
+            (rawDateFrom !== prevRawDate.current.rawDateFrom ||
+                rawDateTo !== prevRawDate.current.rawDateTo)
+        ) {
+            setDoneShowAll(false);
+        }
+        prevRawDate.current = { rawDateFrom, rawDateTo };
+    }, [rawDateFrom, rawDateTo]);
+
+    const handleDoneShowAll = () => {
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete("dateFrom");
+        params.delete("dateTo");
+        params.delete("page");
+        router.push(`${pathname}?${params.toString()}`);
+        setDoneShowAll(true);
+    };
+    const handleDoneShowToday = () => {
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("dateFrom", todayDefault);
+        params.set("dateTo", todayDefault);
+        params.delete("page");
+        router.push(`${pathname}?${params.toString()}`);
+        setDoneShowAll(false);
+    };
 
     const loadTasks = useCallback(async () => {
         setLoading(true);
@@ -125,10 +172,17 @@ export default function BoardClient() {
                 query = query.ilike("print_items", `%${fPrint.trim()}%`);
             if (fPost) query = query.ilike("post_processing", `${fPost}%`);
             if (fConsult) query = query.eq("consult_path", fConsult);
-            if (fDateFrom)
-                query = query.gte("created_at", `${fDateFrom}T00:00:00`);
-            if (fDateTo)
-                query = query.lte("created_at", `${fDateTo}T23:59:59`);
+            if (tab === "done") {
+                if (!doneShowAll) {
+                    query = query.gte("completed_at", `${doneDateFrom}T00:00:00`);
+                    query = query.lte("completed_at", `${doneDateTo}T23:59:59`);
+                }
+            } else {
+                if (fDateFrom)
+                    query = query.gte("created_at", `${fDateFrom}T00:00:00`);
+                if (fDateTo)
+                    query = query.lte("created_at", `${fDateTo}T23:59:59`);
+            }
 
             const { data, count } = await query;
             setTasks((data ?? []) as unknown as TaskWithDesigner[]);
@@ -143,7 +197,8 @@ export default function BoardClient() {
         }
     }, [
         tab, page, from, q, fStatus, fMethod, fSource, fPrint,
-        fPost, fConsult, fDateFrom, fDateTo, fSortBy, fSortDir,
+        fPost, fConsult, rawDateFrom, rawDateTo, fSortBy, fSortDir,
+        doneShowAll, doneDateFrom, doneDateTo,
     ]);
 
     useEffect(() => {
@@ -264,6 +319,50 @@ export default function BoardClient() {
                 </p>
             </div>
 
+            {tab === "done" && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, paddingBottom: 8, paddingTop: 4 }}>
+                    <button
+                        onClick={handleDoneShowToday}
+                        style={{
+                            padding: "3px 12px",
+                            borderRadius: 99,
+                            border: `1px solid ${!doneShowAll ? "#15803d" : "#e5e7eb"}`,
+                            background: !doneShowAll ? "#f0fdf4" : "#fff",
+                            color: !doneShowAll ? "#15803d" : "#6b7280",
+                            fontWeight: 600,
+                            fontSize: 12,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                        }}
+                    >
+                        오늘
+                    </button>
+                    <button
+                        onClick={handleDoneShowAll}
+                        style={{
+                            padding: "3px 12px",
+                            borderRadius: 99,
+                            border: `1px solid ${doneShowAll ? "#6b7280" : "#e5e7eb"}`,
+                            background: doneShowAll ? "#f9fafb" : "#fff",
+                            color: doneShowAll ? "#374151" : "#9ca3af",
+                            fontWeight: 600,
+                            fontSize: 12,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                        }}
+                    >
+                        전체
+                    </button>
+                    {!doneShowAll && (
+                        <span style={{ fontSize: 12, color: "#9ca3af" }}>
+                            {doneDateFrom === doneDateTo
+                                ? doneDateFrom
+                                : `${doneDateFrom} ~ ${doneDateTo}`}
+                        </span>
+                    )}
+                </div>
+            )}
+
             <FilterBar
                 currentStatus={tab === "done" ? "" : fStatus}
                 currentMethod={fMethod}
@@ -271,8 +370,8 @@ export default function BoardClient() {
                 currentPrint={fPrint}
                 currentPost={fPost}
                 currentConsult={fConsult}
-                currentDateFrom={fDateFrom}
-                currentDateTo={fDateTo}
+                currentDateFrom={tab === "done" && !doneShowAll ? doneDateFrom : fDateFrom}
+                currentDateTo={tab === "done" && !doneShowAll ? doneDateTo : fDateTo}
                 currentSortBy={fSortBy}
                 currentSortDir={fSortDir || "desc"}
             />

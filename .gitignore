@@ -46,3 +46,9 @@ next-env.d.ts
 
 server\.gitignore
 DevBasenpm-cache/
+
+# 압축 해제 중복 폴더 / IDE / 로컬 세션
+/paperO2-main/
+.idea/
+.claude/
+README.html

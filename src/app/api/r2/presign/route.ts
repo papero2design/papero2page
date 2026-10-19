@@ -32,7 +32,10 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    const key = `${Date.now()}_${filename.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    // key 는 R2 내부 식별자일 뿐이다. 표시용 이름은 task_files.file_name 이 갖는다.
+    // 한글이 전부 _ 로 뭉개지던 걸 확장자만 남기는 쪽으로 바꾼다
+    const ext = (filename.match(/\.[a-zA-Z0-9]{1,8}$/)?.[0] ?? "").toLowerCase();
+    const key = `${Date.now()}_${crypto.randomUUID().slice(0, 8)}${ext}`;
 
     try {
         const r2 = createR2Client();

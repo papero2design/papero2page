@@ -1,0 +1,650 @@
+// src/app/(classic)/board/designers/[id]/DesignerBoardClient.tsx
+"use client";
+
+import { useState, useEffect, useRef, useCallback } from "react";
+import Link from "next/link";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { TASK_SELECT } from "@/types/database";
+import type { TaskWithDesigner } from "@/types/database";
+import BoardTable from "../../BoardTable";
+import DesignerProfilePanel from "./DesignerProfilePanel";
+import WriteButton from "../../WriteButton";
+import PaginationClient from "../../PaginationClient";
+import FilterBar from "../../FilterBar";
+import { TableRowsSkeleton } from "@/lib/ui/Skeleton";
+
+
+const PAGE_SIZE = 15;
+
+type Tab = "work" | "done";
+
+interface DesignerData {
+    id: string;
+    name: string;
+    status: string;
+    avatar_url: string | null;
+    user_id: string | null;
+    music_title: string | null;
+    music_link: string | null;
+    banner_color: string | null;
+    member_type: string | null;
+}
+
+interface Props {
+    designerId: string;
+    // BoardClient에서 이미 조회한 값을 props로 받으면 재조회 생략
+    isAdmin?: boolean;
+    isDesignerRole?: boolean;
+    isCsRole?: boolean;
+    currentUserId?: string | null;
+    allDesigners?: { id: string; name: string }[];
+    currentRole?: string | null;
+}
+
+export default function DesignerBoardClient({
+    designerId,
+    isAdmin: isAdminProp,
+    isDesignerRole: isDesignerRoleProp,
+    isCsRole: isCsRoleProp,
+    currentUserId: currentUserIdProp,
+    currentRole: currentRoleProp,
+    allDesigners: allDesignersProp,
+}: Props) {
+    const searchParams = useSearchParams();
+    const router = useRouter();
+    const pathname = usePathname();
+    const [tasks, setTasks] = useState<TaskWithDesigner[]>([]);
+    const [total, setTotal] = useState(0);
+    const [loading, setLoading] = useState(true);
+    const [initialLoad, setInitialLoad] = useState(true);
+
+    // 완료 탭 날짜 필터: true = 전체 보기, false = 날짜 필터 적용
+    const [doneShowAll, setDoneShowAll] = useState(false);
+
+    // props로 받은 경우 즉시 초기화, 없으면 fetch
+    const [designer, setDesigner] = useState<DesignerData | null>(null);
+    const [isOwn, setIsOwn] = useState(false);
+    const [isAdmin, setIsAdmin] = useState(isAdminProp ?? false);
+    const [canEditDesigner, setCanEditDesigner] = useState(
+        (isAdminProp ?? false) || (isDesignerRoleProp ?? false) || (isCsRoleProp ?? false),
+    );
+    const [viewerRole, setViewerRole] = useState<string | null>(currentRoleProp ?? null);
+
+    // ★ useState 초기값은 첫 마운트 때만 계산된다.
+    //   /board?designer=xxx 를 새로고침으로 열면 BoardClient 의 역할 조회가
+    //   아직 안 끝나 전부 false 로 굳어버린다. prop 이 바뀌면 따라가게 한다
+    useEffect(() => {
+        if (isAdminProp === undefined) return;   // 단독 접근은 아래 로직이 채운다
+        setIsAdmin(isAdminProp);
+        setCanEditDesigner(
+            isAdminProp || (isDesignerRoleProp ?? false) || (isCsRoleProp ?? false),
+        );
+        setViewerRole(currentRoleProp ?? null);
+    }, [isAdminProp, isDesignerRoleProp, isCsRoleProp, currentRoleProp]);
+    // 현재 보고 있는 멤버가 CS팀인지 (로드 후 결정)
+    const [isMemberCs, setIsMemberCs] = useState(false);
+    const [allDesigners, setAllDesigners] = useState<{ id: string; name: string }[]>(
+        allDesignersProp ?? [],
+    );
+
+    // 탭 카운트
+    const [tabCounts, setTabCounts] = useState({
+        work: 0,
+        done: 0,
+        todayDone: 0,
+        priorityCount: 0,
+    });
+    // 상단 프로필 박스용 디자인 통계 (CS팀도 assigned_designer_id 기준)
+    const [profileStats, setProfileStats] = useState({
+        active: 0,
+        done: 0,
+        priority: 0,
+    });
+
+    // searchParams에서 값 읽기
+    const tabParam = searchParams.get("tab");
+    const tab: Tab = tabParam === "done" ? "done" : "work";
+    const page = Math.max(1, Number(searchParams.get("page") ?? 1));
+    const from = (page - 1) * PAGE_SIZE;
+    const q = searchParams.get("q") ?? "";
+    const fMethod = searchParams.get("method") ?? "";
+    const fSource = searchParams.get("source") ?? "";
+    const fPrint = searchParams.get("print") ?? "";
+    const fPost = searchParams.get("post") ?? "";
+    const fConsult = searchParams.get("consult") ?? "";
+    const todayDefault = new Date().toISOString().split("T")[0];
+    // 완료 탭: URL에 날짜 없으면 오늘 기본값. 담당작업 탭: 날짜 필터 없음(빈 문자열).
+    const rawDateFrom = searchParams.get("dateFrom");
+    const rawDateTo = searchParams.get("dateTo");
+    const fDateFrom = tab === "done" ? (rawDateFrom ?? todayDefault) : "";
+    const fDateTo   = tab === "done" ? (rawDateTo   ?? todayDefault) : "";
+    const fSortBy = searchParams.get("sortBy") ?? "";
+    const fSortDir = searchParams.get("sortDir") ?? "";
+
+    // 사용자가 FilterBar에서 날짜를 직접 설정하면 doneShowAll 해제
+    const prevRawDate = useRef({ rawDateFrom, rawDateTo });
+    useEffect(() => {
+        if (
+            (rawDateFrom || rawDateTo) &&
+            (rawDateFrom !== prevRawDate.current.rawDateFrom ||
+                rawDateTo !== prevRawDate.current.rawDateTo)
+        ) {
+            setDoneShowAll(false);
+        }
+        prevRawDate.current = { rawDateFrom, rawDateTo };
+    }, [rawDateFrom, rawDateTo]);
+
+    // 완료 탭 전환 시 doneShowAll 초기화
+    const prevTab = useRef(tab);
+    useEffect(() => {
+        if (tab !== prevTab.current) {
+            setDoneShowAll(false);
+            prevTab.current = tab;
+        }
+    }, [tab]);
+
+    // 전체 보기 / 오늘로 토글 핸들러
+    const handleDoneShowAll = () => {
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete("dateFrom");
+        params.delete("dateTo");
+        params.delete("page");
+        router.push(`${pathname}?${params.toString()}`);
+        setDoneShowAll(true);
+    };
+    const handleDoneShowToday = () => {
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("dateFrom", todayDefault);
+        params.set("dateTo", todayDefault);
+        params.delete("page");
+        router.push(`${pathname}?${params.toString()}`);
+        setDoneShowAll(false);
+    };
+
+    // props로 받은 경우 allDesigners 동기화 (새 디자이너 추가 등 반영)
+    useEffect(() => {
+        if (allDesignersProp) setAllDesigners(allDesignersProp);
+    }, [allDesignersProp]);
+
+    const DESIGNER_SELECT = "id, name, status, avatar_url, user_id, music_title, music_link, banner_color, member_type";
+
+    // 디자이너 정보 재조회 (프로필 수정 후 호출)
+    const reloadDesigner = useCallback(async () => {
+        const supabase = createClient();
+        const { data: d } = await supabase
+            .from("designers")
+            .select(DESIGNER_SELECT)
+            .eq("id", designerId)
+            .single();
+        if (d) {
+            setDesigner(d as DesignerData);
+            setIsMemberCs(d.member_type === "cs");
+        }
+    }, [designerId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // 디자이너 정보 조회 — role/allDesigners는 props로 받으므로 생략
+    useEffect(() => {
+        const supabase = createClient();
+        const load = async () => {
+            if (isAdminProp !== undefined) {
+                // BoardClient에서 role을 이미 알고 있음 → designer 정보 1건만 조회
+                const { data: d } = await supabase
+                    .from("designers")
+                    .select(DESIGNER_SELECT)
+                    .eq("id", designerId)
+                    .single();
+                if (d) {
+                    const data = d as DesignerData;
+                    setDesigner(data);
+                    setIsMemberCs(data.member_type === "cs");
+                    const isCs = data.member_type === "cs";
+                    setIsOwn(
+                        ((isDesignerRoleProp ?? false) || (isCsRoleProp ?? false) || isCs) &&
+                            d.user_id === (currentUserIdProp ?? null),
+                    );
+                }
+            } else {
+                // 단독 접근 시 (직접 URL 등) 모두 조회
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) return;
+
+                const [profileRes, designerRes, designersRes] = await Promise.all([
+                    supabase.from("profiles").select("role").eq("id", user.id).single(),
+                    supabase
+                        .from("designers")
+                        .select(DESIGNER_SELECT)
+                        .eq("id", designerId)
+                        .single(),
+                    supabase.from("designers").select("id, name").eq("is_active", true).order("name"),
+                ]);
+
+                const role = profileRes.data?.role;
+                const admin = role === "admin";
+                const isDesignerRole = role === "designer";
+                const isCsRole = role === "cs";
+                setIsAdmin(admin);
+                setCanEditDesigner(admin || isDesignerRole || isCsRole);
+                setViewerRole(role ?? null);
+                if (designerRes.data) {
+                    const d = designerRes.data as DesignerData;
+                    setDesigner(d);
+                    setIsMemberCs(d.member_type === "cs");
+                    setIsOwn((isDesignerRole || isCsRole) && d.user_id === user.id);
+                }
+                setAllDesigners(designersRes.data ?? []);
+            }
+        };
+        load();
+    }, [designerId, isAdminProp, isDesignerRoleProp, isCsRoleProp, currentUserIdProp]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // 작업 목록 + 탭 카운트 fetch
+    const loadTasks = useCallback(async () => {
+        // designer 로드 전에는 member_type을 알 수 없으므로 대기
+        if (!designer && isAdminProp !== undefined) return;
+        setLoading(true);
+        try {
+            const supabase = createClient();
+            const sortBy = fSortBy || "created_at";
+            const sortAsc = fSortDir === "asc";
+
+            // CS팀: registered_by(이름) 기준, 디자이너: assigned_designer_id 기준
+            const isCs = isMemberCs;
+            const designerName = designer?.name ?? "";
+
+            let query = supabase
+                .from("tasks")
+                .select(TASK_SELECT, { count: "exact" })
+                .is("deleted_at", null);
+
+            if (isCs) {
+                query = query.eq("registered_by", designerName);
+            } else {
+                query = query.eq("assigned_designer_id", designerId);
+            }
+
+            if (tab === "done") {
+                query = query.eq("status", "완료");
+            } else {
+                query = query.neq("status", "완료");
+            }
+
+            query = query
+                .order(sortBy, { ascending: sortAsc })
+                .range(from, from + PAGE_SIZE - 1);
+
+            if (q.trim()) query = query.ilike("customer_name", `%${q.trim()}%`);
+            if (fMethod) query = query.eq("order_method", fMethod);
+            if (fSource) query = query.eq("order_source", fSource);
+            if (fPrint.trim())
+                query = query.ilike("print_items", `%${fPrint.trim()}%`);
+            if (fPost) query = query.ilike("post_processing", `${fPost}%`);
+            if (fConsult) query = query.eq("consult_path", fConsult);
+            // 완료 탭: completed_at 기준, doneShowAll이면 날짜 필터 없음
+            // 담당작업 탭: 날짜 필터 없음
+            if (tab === "done" && !doneShowAll) {
+                if (fDateFrom)
+                    query = query.gte("completed_at", `${fDateFrom}T00:00:00`);
+                if (fDateTo)
+                    query = query.lte("completed_at", `${fDateTo}T23:59:59`);
+            }
+
+            // CS 등록작업: created_at 기준 날짜 필터 (작업 탭)
+            if (isCs && tab !== "done" && !doneShowAll) {
+                if (fDateFrom)
+                    query = query.gte("created_at", `${fDateFrom}T00:00:00`);
+                if (fDateTo)
+                    query = query.lte("created_at", `${fDateTo}T23:59:59`);
+            }
+
+            // 오늘 날짜 범위
+            const todayStr = new Date().toISOString().split("T")[0];
+            const todayStart = `${todayStr}T00:00:00`;
+            const todayEnd = `${todayStr}T23:59:59`;
+
+            // 카운트 쿼리 빌더 (CS/디자이너 분기)
+            const baseCount = () => {
+                const q = supabase.from("tasks").select("id", { count: "exact", head: true }).is("deleted_at", null);
+                return isCs ? q.eq("registered_by", designerName) : q.eq("assigned_designer_id", designerId);
+            };
+
+            // 작업 목록 + 탭 카운트 동시 조회
+            const [taskResult, ...countResults] = await Promise.all([
+                query,
+                // 진행 중 (전체)
+                baseCount().neq("status", "완료"),
+                // 완료 (전체 — 탭 배지용)
+                baseCount().eq("status", "완료"),
+                // 오늘 등록 또는 완료 (프로필 통계용)
+                isCs
+                    ? baseCount().gte("created_at", todayStart).lte("created_at", todayEnd)
+                    : baseCount().eq("status", "완료").gte("completed_at", todayStart).lte("completed_at", todayEnd),
+                // 우선작업 진행 중 (프로필 통계용)
+                baseCount().neq("status", "완료").eq("is_priority", true),
+            ]);
+
+            setTasks((taskResult.data ?? []) as unknown as TaskWithDesigner[]);
+            setTotal(taskResult.count ?? 0);
+            setTabCounts({
+                work: countResults[0].count ?? 0,
+                done: countResults[1].count ?? 0,
+                todayDone: countResults[2].count ?? 0,
+                priorityCount: countResults[3].count ?? 0,
+            });
+
+            // 상단 박스: CS팀도 항상 assigned_designer_id 기준 디자인 통계
+            if (isCs) {
+                const baseDesign = () =>
+                    supabase
+                        .from("tasks")
+                        .select("id", { count: "exact", head: true })
+                        .is("deleted_at", null)
+                        .eq("assigned_designer_id", designerId);
+                const [dsActive, dsTodayDone, dsPriority] = await Promise.all([
+                    baseDesign().neq("status", "완료"),
+                    baseDesign()
+                        .eq("status", "완료")
+                        .gte("completed_at", todayStart)
+                        .lte("completed_at", todayEnd),
+                    baseDesign().neq("status", "완료").eq("is_priority", true),
+                ]);
+                setProfileStats({
+                    active: dsActive.count ?? 0,
+                    done: dsTodayDone.count ?? 0,
+                    priority: dsPriority.count ?? 0,
+                });
+            } else {
+                setProfileStats({
+                    active: countResults[0].count ?? 0,
+                    done: countResults[2].count ?? 0,
+                    priority: countResults[3].count ?? 0,
+                });
+            }
+
+            window.dispatchEvent(new Event("board-refresh"));
+        } catch (err) {
+            console.error("[DesignerBoardClient] loadTasks failed:", err);
+        } finally {
+            setLoading(false);
+            setInitialLoad(false);
+        }
+    }, [
+        designer,
+        isMemberCs,
+        designerId,
+        tab,
+        from,
+        q,
+        fMethod,
+        fSource,
+        fPrint,
+        fPost,
+        fConsult,
+        fDateFrom,
+        fDateTo,
+        doneShowAll,
+        fSortBy,
+        fSortDir,
+        isAdminProp,
+    ]);
+
+    useEffect(() => {
+        loadTasks();
+    }, [loadTasks]);
+    // 외주가 아닌 사내 전원이 등록할 수 있다. 역할을 나열하지 않는 이유는
+    // profiles.role 값이 designers.member_type 과 어긋나 있을 수 있어서다.
+    // isAdmin 을 앞에 둔 건 currentRole 이 늦게 와도 관리자는 막히지 않게 하려는 것
+    const isMemberOutsourcing = designer?.member_type === "outsourcing";
+
+    const canRegisterHere = isAdmin || !!viewerRole
+        ? viewerRole !== "outsourcing"
+        : false;
+
+    const totalPages = Math.ceil(total / PAGE_SIZE);
+
+    const stats = {
+        active: profileStats.active,
+        done: profileStats.done,
+        priority: profileStats.priority,
+        statusMap: {} as Record<string, number>,
+    };
+
+    const TABS: { key: Tab; label: string; count: number }[] = [
+        { key: "work", label: isMemberCs ? "등록한 작업" : "담당작업", count: tabCounts.work },
+        { key: "done", label: isMemberCs ? "완료된 등록" : "완료", count: tabCounts.todayDone },
+    ];
+
+    const buildTabUrl = (t: Tab) => {
+        const p = new URLSearchParams(searchParams.toString());
+        p.set("tab", t);
+        p.set("designer", designerId);
+        p.delete("page");
+        return `/board?${p.toString()}`;
+    };
+
+    // 스켈레톤 (초기 로드) — lib/ui/Skeleton
+    if (initialLoad) {
+        return <TableRowsSkeleton rows={6} />;
+    }
+
+    return (
+        <div
+            style={{
+                width: "100%",
+                maxWidth: 1260,
+                margin: "0 auto",
+                padding: "0 16px 40px",
+                position: "relative",
+            }}
+        >
+            {/* 로딩 오버레이 */}
+            {loading && (
+                <div
+                    style={{
+                        position: "absolute",
+                        inset: 0,
+                        background: "rgba(255,255,255,0.5)",
+                        zIndex: 10,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        pointerEvents: "none",
+                    }}
+                >
+                    <div
+                        style={{
+                            width: 32,
+                            height: 32,
+                            border: "3px solid #e5e7eb",
+                            borderTopColor: "#6b7280",
+                            borderRadius: "50%",
+                            animation: "spin 0.6s linear infinite",
+                        }}
+                    />
+                </div>
+            )}
+
+            {/* 프로필 패널 */}
+            {designer && (
+                <DesignerProfilePanel
+                    designer={designer}
+                    stats={stats}
+                    isOwn={isOwn}
+
+                    onRefresh={reloadDesigner}
+                />
+            )}
+
+            {/* 탭 버튼 */}
+            <div
+                style={{
+                    display: "flex",
+                    gap: 8,
+                    marginBottom: 16,
+                    borderBottom: "2px solid #e5e7eb",
+                    paddingBottom: 0,
+                }}
+            >
+                {TABS.map(({key, label, count}) => {
+                    const isActive = tab === key;
+                    const color =
+                        key === "done" ? "#15803d" : "#111827";
+                    return (
+                        <Link
+                            key={key}
+                            href={buildTabUrl(key)}
+                            style={{
+                                display: "inline-flex",
+                                gap: 6,
+                                padding: "8px 16px",
+                                fontWeight: 700,
+                                color: isActive ? color : "#9ca3af",
+                                borderBottom: isActive
+                                    ? `2px solid ${color}`
+                                    : "2px solid transparent",
+                                marginBottom: -2,
+                                textDecoration: "none",
+                                transition: "color 0.1s",
+                                whiteSpace: "nowrap",
+                            }}
+                        >
+                            {label}
+                            <span
+                                style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    minWidth: 20,
+                                    height: 20,
+                                    padding: "0 6px",
+                                    borderRadius: 99,
+                                    background: isActive ? color : "#e5e7eb",
+                                    color: isActive ? "#fff" : "#6b7280",
+                                    fontSize: 11,
+                                    fontWeight: 800,
+                                }}
+                            >
+                                {count > 99 ? "99+" : count}
+                            </span>
+                        </Link>
+                    );
+                })}
+
+                <div style={{flex: 1}}/>
+
+                {/* 사내 전원(admin·designer·cs)이 남의 프로필에서도 등록할 수 있다.
+                    외주 멤버 프로필에서는 숨긴다 */}
+                {canRegisterHere && (
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            paddingBottom: 4,
+                        }}
+                    >
+                        <WriteButton
+                            onRefresh={loadTasks}
+                            defaultPriority={false}
+                            assignedDesignerId={isMemberCs ? null : designerId}
+                            profileName={designer?.name ?? null}
+                            profileIsCs={isMemberCs}
+                            profileIsOutsourcing={isMemberOutsourcing}
+                        />
+                    </div>
+                )}
+            </div>
+
+            {/* 총 건수 */}
+            <div style={{paddingTop: 4, marginBottom: 4}}>
+                <p style={{color: "#9ca3af", margin: 0}}>
+                    총 <strong style={{color: "#111827"}}>{total}</strong>건
+                    {q && (
+                        <span style={{marginLeft: 8, color: "#6b7280"}}>
+                            &quot;{q}&quot; 검색결과
+                        </span>
+                    )}
+                </p>
+            </div>
+
+            {/* 완료 탭: 날짜 범위 토글 */}
+            {tab === "done" && (
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        paddingBottom: 8,
+                        paddingTop: 4,
+                    }}
+                >
+                    <button
+                        onClick={handleDoneShowToday}
+                        style={{
+                            padding: "3px 12px",
+                            borderRadius: 99,
+                            border: `1px solid ${!doneShowAll ? "#15803d" : "#e5e7eb"}`,
+                            background: !doneShowAll ? "#f0fdf4" : "#fff",
+                            color: !doneShowAll ? "#15803d" : "#6b7280",
+                            fontWeight: 600,
+                            fontSize: 12,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                        }}
+                    >
+                        오늘
+                    </button>
+                    <button
+                        onClick={handleDoneShowAll}
+                        style={{
+                            padding: "3px 12px",
+                            borderRadius: 99,
+                            border: `1px solid ${doneShowAll ? "#6b7280" : "#e5e7eb"}`,
+                            background: doneShowAll ? "#f9fafb" : "#fff",
+                            color: doneShowAll ? "#374151" : "#9ca3af",
+                            fontWeight: 600,
+                            fontSize: 12,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                        }}
+                    >
+                        전체
+                    </button>
+                    {!doneShowAll && (
+                        <span style={{fontSize: 12, color: "#9ca3af"}}>
+                            {fDateFrom === fDateTo
+                                ? fDateFrom
+                                : `${fDateFrom} ~ ${fDateTo}`}
+                        </span>
+                    )}
+                </div>
+            )}
+
+            <FilterBar
+                currentStatus=""
+                currentMethod={fMethod}
+                currentSource={fSource}
+                currentPrint={fPrint}
+                currentPost={fPost}
+                currentConsult={fConsult}
+                currentDateFrom={tab === "done" && !doneShowAll ? fDateFrom : ""}
+                currentDateTo={tab === "done" && !doneShowAll ? fDateTo : ""}
+                currentSortBy={fSortBy}
+                currentSortDir={fSortDir || "desc"}
+                hideDateFilter={tab === "work"}
+            />
+
+            <BoardTable
+                tasks={tasks}
+                total={total}
+                from={from}
+                designers={allDesigners}
+                canEditDesigner={canEditDesigner}
+                writeButton={undefined}
+                onMutate={loadTasks}
+                highlightPriorityRows={tab === "work"}
+            />
+
+            <PaginationClient page={page} totalPages={totalPages}/>
+        </div>
+    );
+}

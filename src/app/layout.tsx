@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import ThemeRegistry from "@/components/common/ThemeRegistry";
+import { SpeedInsights } from "@vercel/speed-insights/next"
+import AppLoader from "@/components/AppLoader";
 
 export const metadata: Metadata = {
     title: "우리 디자인을 부탁해",
@@ -15,7 +17,11 @@ export default function RootLayout({
     return (
         <html lang="ko">
             <body>
-                <ThemeRegistry>{children}</ThemeRegistry>
+                <ThemeRegistry>
+                    <AppLoader/>
+                        {children}
+                </ThemeRegistry>
+                <SpeedInsights/>
             </body>
         </html>
     );

@@ -1,0 +1,16 @@
+{
+  "name": "papero2-db-migration",
+  "private": true,
+  "type": "module",
+  "description": "papero2page(구) Supabase → paperO2(신) Supabase 데이터 병합 스크립트",
+  "scripts": {
+    "inspect": "node migrate.mjs inspect",
+    "plan": "node migrate.mjs plan",
+    "apply": "node migrate.mjs apply --yes",
+    "verify": "node migrate.mjs verify"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "pg": "^8.13.0"
+  }
+}

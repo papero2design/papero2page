@@ -21,7 +21,7 @@
 ## 사전 준비 (전환 전날까지)
 
 - [ ] 기존 Vercel 프로젝트에 paperO2-main 코드가 Preview 로 배포되어 빌드 통과 확인
-- [ ] Vercel 환경변수 준비 (신 Supabase 값 + solapi + R2 + CRON_SECRET 등 16개, `.env.local` 참고)
+- [ ] Vercel Production 환경변수 준비: 신 Supabase 3개(URL/ANON/SERVICE_ROLE) 교체 + solapi 4개 + NOTIFY_WEBHOOK_SECRET + NOTIFY_STAFF_PHONES + CRON_SECRET 추가. **`NOTIFY_DRY_RUN=0`** 을 넣어야 알림톡이 실제 발송됨 (없으면 dry-run). R2 4개는 양쪽 동일이라 그대로. `NEXT_PUBLIC_SITE_URL` 은 운영 도메인
 - [ ] 신 Supabase → Authentication → URL Configuration 에 기존 서비스 도메인을 Site URL / Redirect URLs 에 추가
 - [ ] 신 Supabase → Database → Backups 에서 최근 백업 시각 확인
 - [ ] R2: 구/신 버킷이 다르면 첨부파일 객체 복사 (DB 에는 URL 만 복사됨)
@@ -50,9 +50,13 @@ cd C:\Users\admin\desktop\meagre\paperO2-main\scripts\migration
    node migrate.mjs verify      # 구 작업 누락 0건, 무결성 ✓ 확인 ("프로필 없는 계정 9" 는 테스트 계정이라 정상)
    ```
 5. Vercel 전환
-   - 기존 Vercel 프로젝트 → Settings → Environment Variables 를 신 값으로 교체
-   - Settings → Git 에서 paperO2-main 저장소로 변경 (또는 준비해 둔 Preview 배포를 Promote to Production)
-   - 배포 완료 대기
+   - 기존 Vercel 프로젝트 → Settings → Environment Variables 의 **Production** 값 교체 (NEXT_PUBLIC_SUPABASE_URL / ANON_KEY / SERVICE_ROLE_KEY → 신 값, 나머지 신규 변수 추가, NOTIFY_DRY_RUN=0)
+   - GitHub papero2design/papero2page 에서 `papero2-merge` → `main` 병합 (PR 또는 아래 명령)
+     ```bash
+     cd C:Usersadmindesktopmeagrepapero2page-repo
+     git checkout main && git pull && git merge --no-ff papero2-merge && git push origin main
+     ```
+   - Vercel 이 main 을 자동 배포 → 완료 대기 (환경변수 교체가 먼저여야 빌드에 신 값이 들어감)
 6. 확인
    - 구 계정으로 로그인 → 게시판·완료·휴지통·통계 건수가 구 사이트와 맞는지
    - 신 계정으로 로그인 → 기존 신 데이터·채팅·외주 화면 정상

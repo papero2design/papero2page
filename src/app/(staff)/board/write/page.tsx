@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { uploadToR2 } from "@/lib/r2/upload";
 import FileUploadField from "../FileUploadField";
 import { useToast } from "../Toast";
+import { clientLogTasksCreated } from "../clientMutations";
 
 const ORDER_SOURCES = ["홈페이지", "스토어팜"];
 const ORDER_METHODS = [
@@ -118,6 +119,8 @@ export default function BoardWritePage() {
         try {
             const groupId = forms.length > 1 ? crypto.randomUUID() : null;
 
+            const created: { id: string; status: string }[] = [];
+
             for (let idx = 0; idx < forms.length; idx++) {
                 const form = forms[idx];
                 const files = filesList[idx];
@@ -161,10 +164,11 @@ export default function BoardWritePage() {
                         status: "대기중",
                         group_id: groupId,
                     })
-                    .select("id")
+                    .select("id, status")
                     .single();
 
                 if (insertError) throw insertError;
+                if (newTask) created.push(newTask);
 
                 if (newTask && uploadedFiles.length > 0) {
                     await supabase.from("task_files").insert(
@@ -177,6 +181,8 @@ export default function BoardWritePage() {
                     );
                 }
             }
+
+            await clientLogTasksCreated(created);
 
             router.push("/board");
         } catch (err) {

@@ -31,6 +31,7 @@ import { createClient } from "@/lib/supabase/client";
 import { uploadToR2, deleteFromR2 } from "@/lib/r2/upload";
 import FileUploadField, { type ExistingFile } from "./FileUploadField";
 import { downloadHref } from "@/lib/tasks/files";
+import { FIELD_LABELS, formatLogChange, logFieldKey } from "@/lib/tasks/logFormat";
 import { useToast } from "./Toast";
 import { TimelineSkeleton } from "@/lib/ui/Skeleton";
 
@@ -100,25 +101,6 @@ function deriveConsultPath(url: string): string {
     return "기타";
 }
 
-const FIELD_LABELS: Record<string, string> = {
-    status: "상태",
-    assigned_designer: "담당 디자이너",
-    is_priority: "우선작업",
-    order_source: "주문경로",
-    customer_name: "고객이름",
-    order_method: "주문방법",
-    order_method_note: "주문방법 메모",
-    print_items: "인쇄항목",
-    post_processing: "후가공",
-    consult_path: "상담경로",
-    special_details: "처리특이사항",
-    registered_by: "등록자",
-    outsourcing_open: "외주 공개",
-    outsourcing_price: "외주 단가",
-    print_received_at: "인쇄 접수",
-    deleted: "삭제",
-    restored: "복구",
-};
 
 // 후가공 값 파싱
 function parsePostProc(raw: string | null) {
@@ -371,8 +353,8 @@ function LogTimeline({ taskId }: { taskId: string }) {
     return (
         <div style={{ padding: "8px 18px 16px" }}>
             {logs.map((log, i) => {
-                const label =
-                    FIELD_LABELS[log.changed_field] ?? log.changed_field;
+                const fieldKey = logFieldKey(log.changed_field, log.old_value);
+                const label = FIELD_LABELS[fieldKey] ?? log.changed_field;
                 const dotColor =
                     log.changed_field === "status"
                         ? "#1ED67D"
@@ -436,15 +418,16 @@ function LogTimeline({ taskId }: { taskId: string }) {
                                     {label}
                                 </span>
                                 {(() => {
-                                    const hasOld = log.old_value !== null;
-                                    const hasNew = log.new_value !== null;
-                                    const showArrow = hasOld || hasNew;
-                                    const displayOld =
-                                        log.old_value ??
-                                        (hasNew ? "미작성" : null);
-                                    const displayNew =
-                                        log.new_value ??
-                                        (hasOld ? "미작성" : null);
+                                    const change = formatLogChange(
+                                        log.changed_field,
+                                        log.old_value,
+                                        log.new_value,
+                                    );
+                                    const hasOld = !!change.from && !change.from.empty;
+                                    const hasNew = !!change.to && !change.to.empty;
+                                    const showArrow = !!change.to;
+                                    const displayOld = change.from?.text ?? null;
+                                    const displayNew = change.to?.text ?? null;
                                     return (
                                         <>
                                             {displayOld !== null && (

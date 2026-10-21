@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import FileUploadField, { uploadToR2 } from "./FileUploadField";
 import { useToast } from "./Toast";
+import { clientLogTasksCreated } from "./clientMutations";
 
 interface Props {
     open: boolean;
@@ -205,6 +206,7 @@ export default function BoardWriteModal({
         try {
             const supabase = createClient();
             const groupId = forms.length > 1 ? crypto.randomUUID() : null;
+            const created: { id: string; status: string; designerName: string | null }[] = [];
 
             for (let idx = 0; idx < forms.length; idx++) {
                 const form = forms[idx];
@@ -268,10 +270,18 @@ export default function BoardWriteModal({
                         status: "작업중",
                         group_id: groupId,
                     })
-                    .select("id")
+                    .select("id, status, designer:designers(name)")
                     .single();
 
                 if (error) throw error;
+                if (newTask) {
+                    const d = newTask.designer as { name: string } | { name: string }[] | null;
+                    created.push({
+                        id: newTask.id,
+                        status: newTask.status,
+                        designerName: (Array.isArray(d) ? d[0]?.name : d?.name) ?? null,
+                    });
+                }
 
                 if (newTask && uploadedFiles.length > 0) {
                     const {error: filesErr} = await supabase
@@ -287,6 +297,8 @@ export default function BoardWriteModal({
                     if (filesErr) throw new Error(`파일 DB 저장 실패: ${filesErr.message}`);
                 }
             }
+
+            await clientLogTasksCreated(created);
 
             setForms([{...FORM_INIT, is_priority: defaultPriority}]);
             setFilesList([[]]);

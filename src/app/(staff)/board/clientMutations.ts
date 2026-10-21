@@ -77,6 +77,29 @@ export async function clientUpdateTaskStatus(
     await insertLog(supabase, id, userId, userName, "status", oldStatus, newStatus, reason);
 }
 
+// ── 작업 등록 로그 ────────────────────────────────────────────
+// 등록 직후 호출. status: null → 등록 상태, 사유 "작업 등록" (logFieldKey 가 "작업 등록"으로 분류)
+// 디자이너를 지정해 등록했으면 배정 로그도 같이 남긴다
+// 로그 실패로 등록 자체가 실패하면 안 되므로 에러는 삼킨다
+export async function clientLogTasksCreated(
+    tasks: { id: string; status: string; designerName?: string | null }[],
+) {
+    if (!tasks.length) return;
+    try {
+        const { supabase, userId, userName } = await withUser();
+        await Promise.all(
+            tasks.flatMap((t) => [
+                insertLog(supabase, t.id, userId, userName, "status", null, t.status, "작업 등록"),
+                ...(t.designerName
+                    ? [insertLog(supabase, t.id, userId, userName, "assigned_designer", null, t.designerName, "작업 등록 시 배정")]
+                    : []),
+            ]),
+        );
+    } catch (err) {
+        console.error("[task_logs] 작업 등록 로그 실패:", (err as Error).message);
+    }
+}
+
 // ── 내용 수정 ────────────────────────────────────────────────
 export async function clientUpdateTask(
     id: string,

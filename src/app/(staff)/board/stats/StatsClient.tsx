@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Download } from "lucide-react";
+import { Download, History } from "lucide-react";
 import { useToast } from "../Toast";
 import * as XLSX from "xlsx-js-style";
 import { Skeleton } from "@/lib/ui/Skeleton";
@@ -638,6 +638,26 @@ export default function StatsClient() {
                     >
                         <Download size={13} />
                         엑셀
+                    </button>
+                    <button
+                        onClick={() => router.push("/board/logs")}
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 5,
+                            padding: "6px 14px",
+                            borderRadius: 99,
+                            border: "1px solid #e5e7eb",
+                            background: "#fff",
+                            color: "#6b7280",
+                            fontWeight: 600,
+                            fontSize: 13,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                        }}
+                    >
+                        <History size={13} />
+                        변경로그
                     </button>
                 </div>
             </div>

@@ -71,51 +71,6 @@ function revalidateAll() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// CREATE
-// ─────────────────────────────────────────────────────────────
-
-export async function createTask(data: {
-    order_source: string;
-    customer_name: string;
-    order_method: string;
-    order_method_note: string | null;
-    print_items: string;
-    post_processing: string;
-    file_paths: string[];
-    consult_path: string;
-    consult_link: string | null;
-    special_details: string | null;
-    assigned_designer_id: string | null;
-    registered_by: string | null;
-    is_priority: boolean;
-    is_quick: boolean;
-    outsourcing_open?: boolean;
-}) {
-    const { supabase, userId } = await getClient();
-    const userName = await getCurrentUserName(supabase, userId);
-
-    const { data: task, error } = await supabase
-        .from("tasks")
-        .insert(data)
-        .select("id")
-        .single();
-
-    if (error) throw new Error(`작업 등록 실패: ${error.message}`);
-
-    await insertLog(
-        supabase,
-        task.id,
-        userId,
-        "status",
-        null,
-        "작업중",
-        `작업 등록`,
-        userName,
-    );
-    revalidateAll();
-}
-
-// ─────────────────────────────────────────────────────────────
 // READ — 변경 로그
 // ─────────────────────────────────────────────────────────────
 
